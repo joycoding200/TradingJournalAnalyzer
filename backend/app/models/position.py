@@ -1,8 +1,7 @@
 """Position model."""
 from uuid import uuid4
 
-from sqlalchemy import Column, Date, Float, ForeignKey, Index, Integer, String
-from sqlalchemy import JSON
+from sqlalchemy import Column, Date, Float, ForeignKey, Index, Integer, String, JSON
 
 from app.database import Base
 

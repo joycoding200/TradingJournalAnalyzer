@@ -1,8 +1,7 @@
 """Pattern model."""
 from uuid import uuid4
 
-from sqlalchemy import Column, Float, ForeignKey, String
-from sqlalchemy import JSON
+from sqlalchemy import Column, Float, ForeignKey, String, JSON
 
 from app.database import Base
 

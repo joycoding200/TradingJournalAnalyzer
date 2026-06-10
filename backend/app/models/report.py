@@ -2,8 +2,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
-from sqlalchemy import JSON
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, JSON
 
 from app.database import Base
 

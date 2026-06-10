@@ -8,7 +8,15 @@
       "mcp__filesystem__create_directory",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/Scripts/python -m pytest tests/ -v)",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__read_text_file",
+      "Bash(\".venv/Scripts/python\" -m pytest tests/test_models.py -v)",
+      "Bash(\".venv/Scripts/python\" -m pytest tests/ -v)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_main.py -v)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_models.py::test_tables_created -v)"
     ]
   }
 }
