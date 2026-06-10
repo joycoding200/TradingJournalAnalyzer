@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.database import Base, get_db
 from app.main import app
 
-TEST_DATABASE_URL = "sqlite:///./test.db"
+TEST_DATABASE_URL = "sqlite://"
 
 engine = create_engine(
     TEST_DATABASE_URL,
