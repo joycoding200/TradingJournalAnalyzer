@@ -1,0 +1,134 @@
+<h2>核心数据模型</h2>
+<p class="subtitle">管道每一层的 Schema 定义</p>
+
+<div class="section">
+  <h3>第 0 层：RawFile（原始文件）</h3>
+  <div class="mockup">
+    <div class="mockup-header">永远保存原始数据，规则升级后可重新解析</div>
+    <div class="mockup-body" style="padding: 16px;">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:12px; border-radius:4px; color:#ccc;">
+{
+  id: UUID
+  user_id: UUID           // 所属用户
+  filename: str            // 原始文件名
+  source_type: str         // "qmt" | "vnpy" | "dfcf" | "ths" | "wenhua" | "boyi" | "ctp" | ...
+  asset_type: str          // "stock" | "future"
+  raw_content: bytes       // 原始文件内容
+  uploaded_at: datetime
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>第 1 层：Trade（统一成交记录）</h3>
+  <div class="mockup">
+    <div class="mockup-header">所有券商 & 期货终端解析后统一为此格式</div>
+    <div class="mockup-body" style="padding: 16px;">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:12px; border-radius:4px; color:#ccc;">
+{
+  trade_id: UUID
+  raw_file_id: UUID        // 溯源到原始文件
+  user_id: UUID
+  asset_type: enum          // "stock" | "future"
+
+  datetime: datetime        // 成交时间
+  symbol: str               // 股票代码 "600519" | 合约代码 "rb2410"
+  exchange: str             // "SH" | "SZ" | "SHFE" | "DCE" | "CZCE" | "CFFEX"
+  side: enum                // "BUY" | "SELL"
+
+  quantity: float           // 成交数量 (A股=股, 期货=手)
+  price: float              // 成交价格
+  commission: float         // 手续费
+  margin: float | None      // 保证金 (期货专用)
+  multiplier: int | None    // 合约乘数 (期货专用, 如螺纹钢=10)
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>第 2 层：Position（重建持仓）</h3>
+  <div class="mockup">
+    <div class="mockup-header">将离散买卖重建为完整交易</div>
+    <div class="mockup-body" style="padding: 16px;">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:12px; border-radius:4px; color:#ccc;">
+{
+  position_id: UUID
+  user_id: UUID
+  symbol: str
+  asset_type: enum
+
+  entry_date: date          // 建仓日
+  exit_date: date           // 平仓日
+  holding_days: int         // 持仓天数
+
+  total_quantity: float     // 总买入量
+  avg_entry_price: float    // 加权平均入场价
+  avg_exit_price: float     // 加权平均出场价
+
+  pnl: float                // 盈亏金额
+  pnl_pct: float            // 盈亏百分比
+
+  trade_ids: list[UUID]     // 组成此 Position 的 Trade 列表（可溯源）
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>第 3 层：Pattern（行为标签）</h3>
+  <div class="mockup">
+    <div class="mockup-header">每笔 Position 可打多个标签</div>
+    <div class="mockup-body" style="padding: 16px;">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:12px; border-radius:4px; color:#ccc;">
+{
+  pattern_id: UUID
+  position_id: UUID         // 关联到 Position
+  pattern_name: enum        // MVP 10 个
+                            // CHASE / BOTTOM / BREAKOUT / TREND / COUNTER_TREND
+                            // SCALP / SWING / POSITION / PYRAMID / AVERAGE_DOWN
+
+  confidence: float         // 置信度，如追涨定义严格命中 = 1.0
+  context: json             // 打标依据，如 {"prev_5d_return": 0.18, "20ma": 1523.5}
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>第 4+5 层：Insight + What If 结果（计算层，不单独存储）</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">InsightResult (按 Pattern 聚合)</div>
+      <div class="mockup-body">
+        <pre style="font-size:11px; margin:0; background:#0a0a1a; padding:8px; border-radius:4px; color:#ccc;">
+{
+  pattern_name: "CHASE"
+  count: 135
+  win_count: 42
+  win_rate: 0.311
+  total_pnl: -28450
+  avg_pnl_pct: -0.038
+  is_best: false
+  is_worst: true
+}</pre>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">WhatIfResult (删除某行为后)</div>
+      <div class="mockup-body">
+        <pre style="font-size:11px; margin:0; background:#0a0a1a; padding:8px; border-radius:4px; color:#ccc;">
+{
+  removed_pattern: "CHASE"
+  original_return: 0.12
+  what_if_return: 0.31
+  delta: 0.19
+  original_win_rate: 0.42
+  what_if_win_rate: 0.58
+  damage_score: 0.85
+}</pre>
+      </div>
+    </div>
+  </div>
+</div>

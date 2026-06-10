@@ -1,0 +1,209 @@
+<h2>前端设计 — Vite + React + shadcn/ui</h2>
+<p class="subtitle">SPA Dashboard 应用，6 个路由页面</p>
+
+<div class="section">
+  <h3>路由结构</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; width: 180px; font-weight: 600; color: #e94560;">路由</td>
+      <td style="padding: 10px; width: 120px; font-weight: 600; color: #e94560;">页面</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">说明</td>
+    </tr>
+    <tr><td style="padding: 10px;">/</td><td style="padding: 10px;">Landing</td><td style="padding: 10px;">产品介绍 + CTA → 上传</td></tr>
+    <tr><td style="padding: 10px;">/login</td><td style="padding: 10px;">Login</td><td style="padding: 10px;">登录</td></tr>
+    <tr><td style="padding: 10px;">/register</td><td style="padding: 10px;">Register</td><td style="padding: 10px;">注册</td></tr>
+    <tr><td style="padding: 10px;">/upload</td><td style="padding: 10px;">Upload</td><td style="padding: 10px;">拖拽上传 + 格式确认 + 数据预览</td></tr>
+    <tr><td style="padding: 10px;">/analysis/:id</td><td style="padding: 10px;">Dashboard</td><td style="padding: 10px;">统计 + 行为归因 + What If 回测 (三 Tab)</td></tr>
+    <tr><td style="padding: 10px;">/report/:id</td><td style="padding: 10px;">Report</td><td style="padding: 10px;">AI 诊断报告 (Markdown 渲染)</td></tr>
+    <tr><td style="padding: 10px;">/history</td><td style="padding: 10px;">History</td><td style="padding: 10px;">历史报告列表</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>关键页面线框</h3>
+
+  <div style="margin-bottom: 24px;">
+    <div class="label" style="margin-bottom:8px;">上传页 /upload</div>
+    <div class="mockup">
+      <div class="mockup-body" style="padding: 20px;">
+        <div style="background:#0f3460; border:2px dashed #e94560; border-radius:8px; padding:40px; text-align:center; margin-bottom:16px;">
+          <div style="font-size:24px; margin-bottom:8px;">📁</div>
+          <div style="color:#e94560; font-size:14px; font-weight:600;">拖拽交割单文件到此处</div>
+          <div style="color:#888; font-size:12px; margin-top:4px;">支持 CSV / Excel · 自动识别券商格式</div>
+          <button class="mock-button" style="margin-top:12px;">选择文件</button>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="flex:1; background:#0a0a1a; border-radius:6px; padding:12px; font-size:12px; color:#888;">
+            <div style="color:#e94560; font-weight:600; margin-bottom:6px;">第①步：上传</div>
+            文件上传后自动检测格式，显示候选列表
+          </div>
+          <div style="flex:1; background:#0a0a1a; border-radius:6px; padding:12px; font-size:12px; color:#888;">
+            <div style="color:#e94560; font-weight:600; margin-bottom:6px;">第②步：确认</div>
+            选择正确的券商 / 终端，预览解析后的交易记录表格
+          </div>
+          <div style="flex:1; background:#0a0a1a; border-radius:6px; padding:12px; font-size:12px; color:#888;">
+            <div style="color:#e94560; font-weight:600; margin-bottom:6px;">第③步：导入</div>
+            确认无误 → 点击导入 → 数据入库 → 跳转分析页
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-bottom: 24px;">
+    <div class="label" style="margin-bottom:8px;">分析 Dashboard /analysis/:id — 三 Tab 布局</div>
+    <div class="mockup">
+      <div class="mockup-body" style="padding: 20px;">
+        <div class="mock-nav" style="margin-bottom:16px;">📊 交易统计 | 🏷️ 行为归因 | 🔮 What If 回测</div>
+        <div style="display:flex; gap:16px;">
+          <div style="flex:1;">
+            <div style="background:#0a0a1a; border-radius:6px; padding:16px;">
+              <div style="color:#e94560; font-weight:600; margin-bottom:12px;">Tab 1: 交易统计</div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
+                <div style="background:#16213e; padding:10px; border-radius:4px; text-align:center;">
+                  <div style="color:#888;">总交易次数</div><div style="color:#e94560; font-size:20px; font-weight:700;">847</div>
+                </div>
+                <div style="background:#16213e; padding:10px; border-radius:4px; text-align:center;">
+                  <div style="color:#888;">胜率</div><div style="color:#e94560; font-size:20px; font-weight:700;">42%</div>
+                </div>
+                <div style="background:#16213e; padding:10px; border-radius:4px; text-align:center;">
+                  <div style="color:#888;">盈亏比</div><div style="color:#e94560; font-size:20px; font-weight:700;">1.15</div>
+                </div>
+                <div style="background:#16213e; padding:10px; border-radius:4px; text-align:center;">
+                  <div style="color:#888;">最大回撤</div><div style="color:#e94560; font-size:20px; font-weight:700;">-23%</div>
+                </div>
+              </div>
+              <div style="margin-top:12px; background:#0a0a1a; border-radius:4px; height:120px; display:flex; align-items:center; justify-content:center; color:#666; font-size:12px;">
+                PnL 曲线图 (Recharts)
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;">
+            <div style="background:#0a0a1a; border-radius:6px; padding:16px;">
+              <div style="color:#e94560; font-weight:600; margin-bottom:12px;">Tab 2: 行为归因</div>
+              <div style="font-size:12px;">
+                <div style="display:flex; align-items:center; margin-bottom:8px; padding:6px; background:#1b4332; border-radius:4px;">
+                  <span style="color:#00b4d8; font-weight:600; width:80px;">BREAKOUT</span>
+                  <div style="flex:1; background:#2d6a4f; height:16px; border-radius:3px; width:62%;"></div>
+                  <span style="color:#00b4d8; margin-left:8px;">+34%</span>
+                </div>
+                <div style="display:flex; align-items:center; margin-bottom:8px; padding:6px; border-radius:4px;">
+                  <span style="color:#666; width:80px;">SWING</span>
+                  <div style="flex:1; background:#0f3460; height:16px; border-radius:3px; width:48%;"></div>
+                  <span style="color:#666; margin-left:8px;">+18%</span>
+                </div>
+                <div style="display:flex; align-items:center; margin-bottom:8px; padding:6px; background:#3a0a0a; border-radius:4px;">
+                  <span style="color:#e94560; font-weight:600; width:80px;">CHASE</span>
+                  <div style="flex:1; background:#6b2020; height:16px; border-radius:3px; width:31%;"></div>
+                  <span style="color:#e94560; margin-left:8px;">-28%</span>
+                </div>
+                <div style="display:flex; align-items:center; padding:6px; background:#3a0a0a; border-radius:4px;">
+                  <span style="color:#e94560; font-weight:600; width:80px;">AVG_DOWN</span>
+                  <div style="flex:1; background:#6b2020; height:16px; border-radius:3px; width:22%;"></div>
+                  <span style="color:#e94560; margin-left:8px;">-41%</span>
+                </div>
+              </div>
+              <div style="margin-top:12px; background:#0a0a1a; border-radius:4px; height:80px; display:flex; align-items:center; justify-content:center; color:#666; font-size:12px;">
+                胜率 vs 收益散点图 (Recharts)
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px; background:#0a0a1a; border-radius:6px; padding:16px;">
+          <div style="color:#e94560; font-weight:600; margin-bottom:12px;">Tab 3: What If 回测</div>
+          <div style="font-size:12px;">
+            <div style="display:flex; align-items:center; margin-bottom:10px;">
+              <span style="width:200px;">当前账户收益</span>
+              <div style="flex:1; background:#16213e; height:24px; border-radius:3px; position:relative;">
+                <div style="position:absolute; left:12%; width:12%; background:#0077b6; height:24px; border-radius:3px;"></div>
+              </div>
+              <span style="margin-left:12px; font-weight:600;">+12%</span>
+            </div>
+            <div style="display:flex; align-items:center; margin-bottom:10px;">
+              <span style="width:200px;">删除 CHASE (追涨)</span>
+              <div style="flex:1; background:#16213e; height:24px; border-radius:3px; position:relative;">
+                <div style="position:absolute; left:12%; width:31%; background:#00b4d8; height:24px; border-radius:3px;"></div>
+              </div>
+              <span style="margin-left:12px; font-weight:600; color:#00b4d8;">+31%</span>
+              <span style="margin-left:8px; color:#00b4d8;">↑ +19%</span>
+            </div>
+            <div style="display:flex; align-items:center;">
+              <span style="width:200px;">删除 AVERAGE_DOWN (补仓)</span>
+              <div style="flex:1; background:#16213e; height:24px; border-radius:3px; position:relative;">
+                <div style="position:absolute; left:12%; width:44%; background:#e94560; height:24px; border-radius:3px;"></div>
+              </div>
+              <span style="margin-left:12px; font-weight:600; color:#e94560;">+44%</span>
+              <span style="margin-left:8px; color:#e94560;">↑ +32%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-bottom: 24px;">
+    <div class="label" style="margin-bottom:8px;">报告页 /report/:id</div>
+    <div class="mockup">
+      <div class="mockup-body" style="padding: 24px;">
+        <div style="text-align:center; margin-bottom:20px;">
+          <div style="font-size:22px; font-weight:700; color:#e94560;">交易行为诊断书</div>
+          <div style="font-size:12px; color:#666; margin-top:4px;">分析期间：2025-01-01 ~ 2026-06-01 · 共 847 笔交易</div>
+        </div>
+        <div style="background:#0a0a1a; border-radius:8px; padding:20px; font-size:13px; line-height:2;">
+          <div style="border-left: 3px solid #e94560; padding-left: 14px; margin-bottom:16px;">
+            <div style="color:#e94560; font-weight:700; font-size:16px;">核心诊断</div>
+            <div style="color:#ccc; margin-top:4px;">你不是不会赚钱——突破交易收益率达到 34%。但补仓行为吞噬了全部利润。</div>
+          </div>
+          <div style="margin-bottom:12px;">
+            <div style="color:#00b4d8; font-weight:700;">1. 你的优势</div>
+            <ul style="color:#888; padding-left:16px;">
+              <li><b style="color:#ccc;">BREAKOUT 突破交易</b>：胜率 62%，平均收益 +3.4%，是你唯一稳定赚钱的模式</li>
+              <li><b style="color:#ccc;">SWING 波段交易</b>：胜率 55%，平均收益 +1.8%，持仓 3-30 天的策略整体有效</li>
+            </ul>
+          </div>
+          <div style="margin-bottom:12px;">
+            <div style="color:#e94560; font-weight:700;">2. 你的劣势</div>
+            <ul style="color:#888; padding-left:16px;">
+              <li><b style="color:#ccc;">AVERAGE_DOWN 补仓</b>：胜率仅 22%，平均亏损 -4.1%，占亏损总额的 38%</li>
+              <li><b style="color:#ccc;">CHASE 追涨</b>：135 次交易胜率仅 31%，买入时已连续上涨 5 天</li>
+            </ul>
+          </div>
+          <div style="margin-bottom:12px;">
+            <div style="color:#e94560; font-weight:700;">3. 最危险行为</div>
+            <div style="color:#ccc; margin-top:4px;">如果过去一年你不补仓，账户收益从 <b style="color:#e94560;">+12%</b> 变为 <b style="color:#00b4d8;">+44%</b>。补仓是你账户最大的收益杀手。</div>
+          </div>
+          <div>
+            <div style="color:#00b4d8; font-weight:700;">4. 改善建议</div>
+            <ol style="color:#888; padding-left:16px;">
+              <li style="color:#ccc;"><b>未来 30 天禁止补仓</b>——设置止损线，跌破即离场</li>
+              <li style="color:#ccc;">将追涨改为突破确认后再入场，避免在连续上涨 5 天后买入</li>
+              <li style="color:#ccc;">突破交易是你的优势，建议将仓位向这个模式倾斜</li>
+            </ol>
+          </div>
+        </div>
+        <div style="display:flex; gap:12px; margin-top:16px; justify-content:center;">
+          <button class="mock-button">📥 导出 PDF</button>
+          <button class="mock-button">🔗 分享报告</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>技术选型</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">类别</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">选择</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">用途</td>
+    </tr>
+    <tr><td style="padding: 10px;">框架</td><td style="padding: 10px;">Vite + React 18</td><td style="padding: 10px;">极速 HMR，SPA 构建</td></tr>
+    <tr><td style="padding: 10px;">UI 库</td><td style="padding: 10px;">shadcn/ui</td><td style="padding: 10px;">表单、按钮、卡片、Tab、Toast 等</td></tr>
+    <tr><td style="padding: 10px;">路由</td><td style="padding: 10px;">React Router v6</td><td style="padding: 10px;">SPA 客户端路由</td></tr>
+    <tr><td style="padding: 10px;">图表</td><td style="padding: 10px;">Recharts</td><td style="padding: 10px;">PnL 曲线、柱状图、散点图</td></tr>
+    <tr><td style="padding: 10px;">HTTP</td><td style="padding: 10px;">fetch + React Query</td><td style="padding: 10px;">API 请求 + 缓存 + 自动重试</td></tr>
+    <tr><td style="padding: 10px;">Markdown</td><td style="padding: 10px;">react-markdown</td><td style="padding: 10px;">AI 报告渲染</td></tr>
+    <tr><td style="padding: 10px;">状态</td><td style="padding: 10px;">React Context + useReducer</td><td style="padding: 10px;">Auth + 全局状态，无需 Redux</td></tr>
+  </table>
+</div>

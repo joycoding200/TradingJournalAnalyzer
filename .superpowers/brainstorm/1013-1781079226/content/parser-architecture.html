@@ -1,0 +1,124 @@
+<h2>解析器插件架构</h2>
+<p class="subtitle">插件式，新增券商只需一个文件</p>
+
+<div class="section">
+  <h3>统一接口</h3>
+  <div class="mockup">
+    <div class="mockup-header">BaseParser — 所有解析器的抽象基类</div>
+    <div class="mockup-body">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:16px; border-radius:4px; color:#ccc;">
+class BaseParser(ABC):
+    """所有券商解析器必须实现的接口"""
+
+    @classmethod
+    @abstractmethod
+    def source_type(cls) -> str:
+        """标识符，如 'qmt', 'vnpy', 'dfcf', 'ths', 'wenhua', 'boyi', 'ctp'"""
+        ...
+
+    @classmethod
+    @abstractmethod
+    def asset_type(cls) -> str:
+        """资产类别 'stock' | 'future'"""
+        ...
+
+    @classmethod
+    @abstractmethod
+    def detect(cls, file: UploadedFile) -> float:
+        """检测此文件是否为该格式，返回置信度 0.0~1.0"""
+        ...
+
+    @classmethod
+    @abstractmethod
+    def parse(cls, file: UploadedFile, raw_file_id: UUID, user_id: UUID) -> list[Trade]:
+        """解析文件，返回 Trade 列表"""
+        ...</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>ParserRegistry 自动发现</h3>
+  <div class="mockup">
+    <div class="mockup-header">注册表 — 自动扫描所有 Parser 子类</div>
+    <div class="mockup-body">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:16px; border-radius:4px; color:#ccc;">
+class ParserRegistry:
+    """自动发现并注册所有 BaseParser 子类"""
+
+    _parsers: list[type[BaseParser]] = []
+
+    @classmethod
+    def auto_discover(cls):
+        """扫描 parsers/ 目录，注册所有 BaseParser 子类"""
+
+    @classmethod
+    def detect_format(cls, file) -> list[tuple[str, float]]:
+        """返回所有匹配的 (source_type, confidence)，按置信度降序"""
+
+    @classmethod
+    def get_parser(cls, source_type: str) -> type[BaseParser]:
+        """按标识符获取对应解析器"""
+
+    @classmethod
+    def parse(cls, source_type: str, file, raw_file_id, user_id) -> list[Trade]:
+        """委托给对应解析器"""</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>解析流程</h3>
+  <div class="mockup">
+    <div class="mockup-header">上传文件 → Trade 列表</div>
+    <div class="mockup-body" style="font-size: 13px; line-height: 2.4; padding: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="color: #666; width: 40px;">①</span>
+          <span>用户上传文件 → 保存 RawFile，拿到 raw_file_id</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="color: #666; width: 40px;">②</span>
+          <span><b>ParserRegistry.detect_format()</b> → 所有解析器各返回一个置信度</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding-left: 52px;">
+          <span style="color: #888; font-size: 11px;">例如：QMT: 0.95, 东方财富: 0.12, VN.PY: 0.08 → 选 QMT</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="color: #666; width: 40px;">③</span>
+          <span>如果最高置信度 &lt; 阈值（如 0.7）→ 返回候选列表让用户手动选择</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="color: #666; width: 40px;">④</span>
+          <span><b>ParserRegistry.parse(source_type, ...)</b> → 得到 Trade[] 列表</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="color: #666; width: 40px;">⑤</span>
+          <span>Trade[] 批量写入 PostgreSQL → 返回给前端预览</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>detect() 策略</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">解析器</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">检测方法</td>
+    </tr>
+    <tr><td style="padding: 10px;">QMT</td><td style="padding: 10px;">列名匹配 "委托时间/成交时间/证券代码/买卖方向"</td></tr>
+    <tr><td style="padding: 10px;">VN.PY</td><td style="padding: 10px;">列名匹配 "datetime/symbol/direction/price/volume"</td></tr>
+    <tr><td style="padding: 10px;">东方财富</td><td style="padding: 10px;">列名匹配 "成交日期/证券代码/操作/成交均价"</td></tr>
+    <tr><td style="padding: 10px;">同花顺</td><td style="padding: 10px;">列名匹配 "发生日期/证券代码/买卖标志/成交价格"</td></tr>
+    <tr><td style="padding: 10px;">文华财经</td><td style="padding: 10px;">列名匹配 "开平/合约/手数/成交价" + asset_type=future</td></tr>
+    <tr><td style="padding: 10px;">博易大师</td><td style="padding: 10px;">列名匹配 "成交日期/合约/买卖/成交价/手数"</td></tr>
+    <tr><td style="padding: 10px;">CTP/快期/易盛</td><td style="padding: 10px;">列名匹配 "交易日/合约代码/买卖/成交量/成交价"</td></tr>
+    <tr><td style="padding: 10px;">华泰/中信/国君...</td><td style="padding: 10px;">列名匹配中文表头 + 券商特有字段模式</td></tr>
+  </table>
+  <p style="margin-top:12px; font-size:12px; color:#888;">
+    💡 detect() 的核心思路：打开文件 → 读表头 → 与各券商模板比对列名 → 打分 → 返回最高者。
+    不靠文件名、不靠魔数，纯表头匹配。
+  </p>
+</div>

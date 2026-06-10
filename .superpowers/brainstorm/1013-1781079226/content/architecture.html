@@ -1,0 +1,81 @@
+<h2>TradeLens MVP 系统架构</h2>
+<p class="subtitle">方案 A — 管道优先 · 最小 AI 面</p>
+
+<div class="section">
+  <h3>核心数据流</h3>
+  <div class="mockup">
+    <div class="mockup-header">6 层管道 + 验证层</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 2.2; padding: 24px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+        <div style="background: #1a1a2e; color: #e94560; padding: 8px 14px; border-radius: 6px; font-weight: 600;">CSV/Excel</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #16213e; color: #0f3460; padding: 8px 14px; border-radius: 6px; font-weight: 600;">Parser 插件</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #0f3460; color: #e94560; padding: 8px 14px; border-radius: 6px; font-weight: 600;">Trade[]</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #533483; color: #e94560; padding: 8px 14px; border-radius: 6px; font-weight: 600;">Position[]</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #2d6a4f; color: #e94560; padding: 8px 14px; border-radius: 6px; font-weight: 600;">Pattern[]</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding-left: 180px;">
+        <div style="background: #1b4332; color: #e94560; padding: 8px 14px; border-radius: 6px; font-weight: 600;">Insight</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #081c15; color: #e94560; padding: 8px 14px; border-radius: 6px; font-weight: 600; border: 2px solid #e94560;">What If</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #1a1a2e; color: #00b4d8; padding: 8px 14px; border-radius: 6px; font-weight: 600; border: 1px dashed #00b4d8;">结构化 JSON</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #03045e; color: #00b4d8; padding: 8px 14px; border-radius: 6px; font-weight: 600;">AI 解释器</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #023e8a; color: #90e0ef; padding: 8px 14px; border-radius: 6px; font-weight: 600;">验证层</div>
+        <span style="color: #666;">→</span>
+        <div style="background: #0077b6; color: white; padding: 8px 14px; border-radius: 6px; font-weight: 600;">诊断报告</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>组件边界</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">后端 FastAPI</div>
+      <div class="mockup-body" style="font-size: 13px; line-height: 2;">
+        <b>API 层</b> — REST 端点<br>
+        <b>解析层</b> — ParserRegistry + 15+ 插件<br>
+        <b>计算层</b> — PositionBuilder / PatternEngine / InsightEngine / WhatIfEngine<br>
+        <b>AI 层</b> — LLMProvider (OpenAI/Claude/DeepSeek) + 验证<br>
+        <b>数据层</b> — SQLAlchemy + PostgreSQL<br>
+        <b>行情层</b> — a-stock-data (mootdx/腾讯优先)
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">前端 Next.js</div>
+      <div class="mockup-body" style="font-size: 13px; line-height: 2;">
+        <b>首页</b> — 上传入口<br>
+        <b>上传页</b> — 拖拽 + 预览 + 格式确认<br>
+        <b>分析页</b> — 统计 + 行为归因 + What If 回测<br>
+        <b>报告页</b> — AI 诊断报告<br>
+        <b>认证</b> — 注册 / 登录 / JWT<br>
+        <b>shadcn/ui</b> — 组件库
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>关键设计决策</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">决策</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">选择</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">原因</td>
+    </tr>
+    <tr><td style="padding: 10px;">行情数据</td><td style="padding: 10px;">a-stock-data</td><td style="padding: 10px;">零 Key 零第三方依赖，mootdx/腾讯不封 IP</td></tr>
+    <tr><td style="padding: 10px;">数据库</td><td style="padding: 10px;">PostgreSQL</td><td style="padding: 10px;">为历史报告、多账户铺垫</td></tr>
+    <tr><td style="padding: 10px;">认证</td><td style="padding: 10px;">JWT 注册登录</td><td style="padding: 10px;">从 MVP 开始区分用户</td></tr>
+    <tr><td style="padding: 10px;">AI 提供商</td><td style="padding: 10px;">环境变量切换</td><td style="padding: 10px;">部署灵活，MVP 不需用户选</td></tr>
+    <tr><td style="padding: 10px;">解析架构</td><td style="padding: 10px;">插件式 Parser</td><td style="padding: 10px;">新增券商只需加一个文件</td></tr>
+    <tr><td style="padding: 10px;">核心卖点</td><td style="padding: 10px;">What If 反事实回测</td><td style="padding: 10px;">量化行为伤害程度</td></tr>
+    <tr><td style="padding: 10px;">AI 策略</td><td style="padding: 10px;">只做文本生成 + 验证层</td><td style="padding: 10px;">数字由程序计算，AI 不准胡说</td></tr>
+  </table>
+</div>

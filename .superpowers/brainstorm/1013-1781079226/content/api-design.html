@@ -1,0 +1,78 @@
+<h2>REST API 设计</h2>
+<p class="subtitle">FastAPI 后端 — V1 MVP 端点</p>
+
+<div class="section">
+  <h3>认证</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; width: 70px; font-weight: 600; color: #00b4d8;">方法</td>
+      <td style="padding: 10px; width: 200px; font-weight: 600; color: #e94560;">路径</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">说明</td>
+    </tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">POST</td><td style="padding: 10px;">/api/auth/register</td><td style="padding: 10px;">注册（email + password）</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">POST</td><td style="padding: 10px;">/api/auth/login</td><td style="padding: 10px;">登录 → 返回 JWT</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>上传 & 解析</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; width: 70px; font-weight: 600; color: #00b4d8;">方法</td>
+      <td style="padding: 10px; width: 240px; font-weight: 600; color: #e94560;">路径</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">说明</td>
+    </tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">POST</td><td style="padding: 10px;">/api/upload</td><td style="padding: 10px;">上传交割单文件 → 保存 RawFile → 格式检测 → 返回候选格式列表</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">POST</td><td style="padding: 10px;">/api/upload/confirm</td><td style="padding: 10px;">用户确认格式 → 执行解析 → 返回 Trade 预览列表</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">POST</td><td style="padding: 10px;">/api/upload/import</td><td style="padding: 10px;">确认无误后导入 → Trade[] 入库 → 返回导入摘要</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>分析（核心）</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; width: 70px; font-weight: 600; color: #00b4d8;">方法</td>
+      <td style="padding: 10px; width: 280px; font-weight: 600; color: #e94560;">路径</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">说明</td>
+    </tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">POST</td><td style="padding: 10px;">/api/analysis/run</td><td style="padding: 10px;">对指定日期范围的 Trade 执行完整分析管道（Position → Pattern → Insight → What If），返回完整结果</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">GET</td><td style="padding: 10px;">/api/analysis/{analysis_id}/stats</td><td style="padding: 10px;">查看某次分析的交易统计结果</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">GET</td><td style="padding: 10px;">/api/analysis/{analysis_id}/insight</td><td style="padding: 10px;">查看 Insight 归因结果（各 Pattern 胜率/收益排名）</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">GET</td><td style="padding: 10px;">/api/analysis/{analysis_id}/whatif</td><td style="padding: 10px;">查看 What If 回测结果（删除每种行为后的收益变化）</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>AI 报告</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+    <tr style="background: #16213e;">
+      <td style="padding: 10px; width: 70px; font-weight: 600; color: #00b4d8;">方法</td>
+      <td style="padding: 10px; width: 280px; font-weight: 600; color: #e94560;">路径</td>
+      <td style="padding: 10px; font-weight: 600; color: #e94560;">说明</td>
+    </tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">POST</td><td style="padding: 10px;">/api/report/generate</td><td style="padding: 10px;">传入 analysis_id → AI 生成诊断报告 → 验证层校验 → 返回报告</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">GET</td><td style="padding: 10px;">/api/report/{report_id}</td><td style="padding: 10px;">查看已生成的报告</td></tr>
+    <tr><td style="padding: 10px; color: #00b4d8;">GET</td><td style="padding: 10px;">/api/reports</td><td style="padding: 10px;">用户的历史报告列表</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>上传 → 报告的完整流程</h3>
+  <div class="mockup">
+    <div class="mockup-header">前端调用顺序</div>
+    <div class="mockup-body" style="font-size: 13px; line-height: 2.2; padding: 20px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <div>① POST /api/upload → 返回 detected_formats</div>
+        <div>② POST /api/upload/confirm {source_type} → 返回 Trade[] 预览</div>
+        <div style="padding-left: 20px; font-size: 11px; color: #888;">用户在前端查看预览表格，确认数据正确</div>
+        <div>③ POST /api/upload/import → Trade[] 入库</div>
+        <div>④ POST /api/analysis/run {date_range} → 后台执行管道，返回 analysis_id</div>
+        <div>⑤ GET /api/analysis/{id}/stats → 渲染统计面板</div>
+        <div>⑥ GET /api/analysis/{id}/insight → 渲染行为归因面板</div>
+        <div>⑦ GET /api/analysis/{id}/whatif → 渲染 What If 回测面板</div>
+        <div>⑧ POST /api/report/generate → AI 生成报告 → 渲染报告页</div>
+      </div>
+    </div>
+  </div>
+</div>

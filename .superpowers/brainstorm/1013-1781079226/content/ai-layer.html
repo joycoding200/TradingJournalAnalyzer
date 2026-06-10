@@ -1,0 +1,174 @@
+<h2>AI 层设计 — 最小 AI 面 + 验证兜底</h2>
+<p class="subtitle">方案 A 的核心：数字从不出自 AI</p>
+
+<div class="section">
+  <h3>数据流</h3>
+  <div class="mockup">
+    <div class="mockup-header">Insight + What If 结果 → 结构化 JSON → AI → 验证 → 报告</div>
+    <div class="mockup-body" style="font-size: 13px; line-height: 2.4; padding: 24px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="background:#0f3460; color:#90e0ef; padding:10px 16px; border-radius:6px; font-weight:600; font-size:12px;">InsightEngine<br>+ WhatIfEngine<br>计算结果</div>
+        <span style="color:#666; font-size:18px;">→</span>
+        <div style="background:#1a1a2e; color:#e94560; padding:10px 16px; border-radius:6px; font-weight:600; font-size:12px; border:1px dashed #e94560;">build_prompt()<br>将数据填入<br>Prompt 模板</div>
+        <span style="color:#666; font-size:18px;">→</span>
+        <div style="background:#03045e; color:#00b4d8; padding:10px 16px; border-radius:6px; font-weight:600; font-size:12px;">LLMProvider<br>OpenAI / Claude<br>/ DeepSeek</div>
+        <span style="color:#666; font-size:18px;">→</span>
+        <div style="background:#023e8a; color:#90e0ef; padding:10px 16px; border-radius:6px; font-weight:600; font-size:12px;">验证层<br>提取数字 →<br>与输入对比</div>
+        <span style="color:#666; font-size:18px;">→</span>
+        <div style="background:#0077b6; color:white; padding:10px 16px; border-radius:6px; font-weight:600; font-size:12px;">诊断报告<br>(markdown)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>AI 输入（结构化 JSON）</h3>
+  <div class="mockup">
+    <div class="mockup-header">所有数字已由程序计算完毕，AI 只负责用中文表达</div>
+    <div class="mockup-body">
+      <pre style="font-size:11px; margin:0; background:#0a0a1a; padding:16px; border-radius:4px; color:#ccc;">
+{
+  "account_summary": {
+    "total_trades": 847,
+    "win_rate": 0.42,
+    "profit_factor": 1.15,
+    "total_return_pct": 0.12,
+    "max_drawdown_pct": -0.23,
+    "avg_holding_days": 8.5,
+    "max_consecutive_losses": 7
+  },
+  "pattern_analysis": [
+    {"pattern": "CHASE",    "count": 135, "win_rate": 0.31, "total_pnl": -28450, "avg_pnl_pct": -0.038},
+    {"pattern": "BREAKOUT", "count": 48,  "win_rate": 0.62, "total_pnl": 15200,  "avg_pnl_pct": 0.034},
+    ...
+  ],
+  "what_if_results": [
+    {"removed_pattern": "CHASE", "original_return": 0.12, "what_if_return": 0.31, "delta": 0.19},
+    {"removed_pattern": "AVERAGE_DOWN", "original_return": 0.12, "what_if_return": 0.44, "delta": 0.32},
+    ...
+  ],
+  "damage_ranking": [
+    {"pattern": "AVERAGE_DOWN", "damage_score": 0.92},
+    {"pattern": "CHASE",        "damage_score": 0.85},
+    ...
+  ]
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Prompt 模板结构</h3>
+  <div class="mockup">
+    <div class="mockup-header">三段式结构化 Prompt</div>
+    <div class="mockup-body" style="font-size: 13px; line-height: 2; padding: 20px;">
+      <div style="background:#0a0a1a; padding: 16px; border-radius: 6px; margin-bottom: 12px;">
+        <div style="color:#e94560; font-weight:600; margin-bottom: 8px;">SYSTEM (角色约束)</div>
+        <pre style="font-size:11px; margin:0; color:#aaa;">
+你是一名 A 股交易教练。你的职责是分析用户的交易数据，帮助他识别亏损原因并给出改善建议。
+你必须严格遵守以下规则：
+1. 只使用我提供的数据，不要编造任何数字
+2. 不要预测市场走势
+3. 不要推荐具体股票
+4. 分析要基于行为，不要归因于市场或运气
+5. 语气：专业、直接、不说废话</pre>
+      </div>
+      <div style="background:#0a0a1a; padding: 16px; border-radius: 6px; margin-bottom: 12px;">
+        <div style="color:#e94560; font-weight:600; margin-bottom: 8px;">USER (数据 + 任务)</div>
+        <pre style="font-size:11px; margin:0; color:#aaa;">
+以下是一位交易者的账户分析数据：
+
+{{ structured_json_here }}
+
+请从以下四个维度生成诊断报告：
+1. 你的优势（最赚钱的行为模式是什么？）
+2. 你的劣势（最亏钱的行为模式是什么？）
+3. 最危险行为（What If 回测显示，删除哪种行为收益提升最大？）
+4. 改善建议（具体的、可执行的下一步行动）
+
+报告格式：Markdown</pre>
+      </div>
+      <div style="background:#0a0a1a; padding: 16px; border-radius: 6px;">
+        <div style="color:#e94560; font-weight:600; margin-bottom: 8px;">OUTPUT FORMAT (严格格式)</div>
+        <pre style="font-size:11px; margin:0; color:#aaa;">
+## 核心诊断
+
+[一句话总结，不超过 50 字]
+
+## 1. 你的优势
+
+- **[行为名称]**：胜率 X%，平均收益 X%
+- ...
+
+## 2. 你的劣势
+
+- **[行为名称]**：占亏损 X%，平均亏损 X%
+- ...
+
+## 3. 最危险行为
+
+如果去掉 **[行为名称]**，你的账户收益从 X% 变为 X%
+
+## 4. 改善建议
+
+1. [具体行动 1]
+2. [具体行动 2]</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>验证层</h3>
+  <div class="mockup">
+    <div class="mockup-header">AI 输出 → 正则提取数字 → 与输入 JSON 对比 → 偏差超阈值则重试</div>
+    <div class="mockup-body">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:16px; border-radius:4px; color:#ccc;">
+class ReportValidator:
+    """验证 AI 生成的报告中的数字是否准确"""
+
+    def validate(self, report: str, input_data: dict) -> ValidationResult:
+        # 从报告中提取所有数字（百分比、金额、次数）
+        report_numbers = extract_numbers(report)
+
+        # 从输入 JSON 中提取对应的参考值
+        reference_numbers = extract_reference_values(input_data)
+
+        # 逐一比对
+        errors = []
+        for num in report_numbers:
+            if not matches_reference(num, reference_numbers, tolerance=0.01):
+                errors.append(f"报告说 {num}，但实际数据是 {reference_numbers[...]}")
+
+        return ValidationResult(
+            passed=len(errors) == 0,
+            errors=errors
+        )
+
+    # 如果未通过验证 → 重试，最多 3 次
+    # 3 次仍失败 → 返回不带数字的通用报告 + 标记 validation_failed</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Provider 抽象</h3>
+  <div class="mockup">
+    <div class="mockup-body">
+      <pre style="font-size:12px; margin:0; background:#0a0a1a; padding:16px; border-radius:4px; color:#ccc;">
+class LLMProvider(ABC):
+    """环境变量 AI_PROVIDER 决定用哪个实现"""
+    @abstractmethod
+    async def generate(self, system_prompt: str, user_prompt: str) -> str: ...
+
+class OpenAIProvider(LLMProvider): ...
+class ClaudeProvider(LLMProvider): ...
+class DeepSeekProvider(LLMProvider): ...
+
+# 工厂函数
+def get_llm() -> LLMProvider:
+    provider = os.getenv("AI_PROVIDER", "openai")  # openai | claude | deepseek
+    return {"openai": OpenAIProvider, "claude": ClaudeProvider, "deepseek": DeepSeekProvider}[provider]()</pre>
+    </div>
+  </div>
+</div>

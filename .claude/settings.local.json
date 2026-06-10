@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__filesystem__directory_tree",
+      "Bash(bash *)",
+      "WebFetch(domain:github.com)",
+      "mcp__plugin_ecc_github__get_file_contents",
+      "mcp__filesystem__create_directory",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
