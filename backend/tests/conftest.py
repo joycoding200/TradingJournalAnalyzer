@@ -34,5 +34,15 @@ def db():
 
 
 @pytest.fixture
+def db_session():
+    """Provide a test database session."""
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture
 def client():
     return TestClient(app)
