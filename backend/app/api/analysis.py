@@ -106,6 +106,7 @@ def get_stats(
 
     total_trades = len(trades)
     total_positions = len(positions)
+    unknown_cost_count = sum(1 for p in positions if not getattr(p, "cost_known", True))
     win_count = sum(1 for p in positions if p.pnl > 0)
     win_rate = (win_count / total_positions) if total_positions > 0 else 0.0
     total_pnl = sum(p.pnl for p in positions)
@@ -138,6 +139,7 @@ def get_stats(
     return StatsResponse(
         total_trades=total_trades,
         total_positions=total_positions,
+        unknown_cost_count=unknown_cost_count,
         win_count=win_count,
         win_rate=round(win_rate, 2),
         total_pnl=round(total_pnl, 2),

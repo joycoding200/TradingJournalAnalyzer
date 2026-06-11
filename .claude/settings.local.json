@@ -106,7 +106,9 @@
       "mcp__filesystem__search_files",
       "Bash(.venv/Scripts/python -m pytest tests/test_engine/ -v)",
       "Bash(.venv/Scripts/python -c ' *)",
-      "Bash(.venv/Scripts/python -m pytest tests/test_parsers/ -q)"
+      "Bash(.venv/Scripts/python -m pytest tests/test_parsers/ -q)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(taskkill //F //IM python.exe)"
     ]
   }
 }

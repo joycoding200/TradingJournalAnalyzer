@@ -32,6 +32,7 @@ class PositionItem(BaseModel):
 class StatsResponse(BaseModel):
     total_trades: int
     total_positions: int
+    unknown_cost_count: int = 0
     win_count: int
     win_rate: float
     total_pnl: float

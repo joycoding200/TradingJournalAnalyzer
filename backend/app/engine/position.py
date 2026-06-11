@@ -3,6 +3,9 @@
 Transforms raw trade records into closed positions using
 FIFO (First-In-First-Out) matching. Each sell matches against
 the oldest unmatched buy lots.
+
+Orphan sells (no prior buy in the data) are treated as positions
+with unknown cost basis, using the sell price as entry price.
 """
 from collections import deque
 from dataclasses import dataclass, field
@@ -24,6 +27,7 @@ class PositionResult:
     pnl: float
     pnl_pct: float
     trade_ids: list[str] = field(default_factory=list)
+    cost_known: bool = True  # False if entry price is estimated (pre-existing position)
 
 
 class PositionBuilder:
@@ -54,7 +58,13 @@ class PositionBuilder:
 
     @staticmethod
     def _build_for_symbol(symbol: str, trades) -> list[PositionResult]:
-        """Build positions for a single symbol using FIFO lot matching."""
+        """Build positions for a single symbol using FIFO lot matching.
+
+        Orphan sells (no prior buy) indicate pre-existing positions from
+        before the data start date. These are treated as positions with
+        unknown cost basis: the entry price is set equal to the sell price
+        (PnL = 0), and cost_known = False.
+        """
         positions: list[PositionResult] = []
         long_queue: deque = deque()
 
@@ -91,6 +101,27 @@ class PositionBuilder:
                             buy_dt,
                         )
 
+                # Handle orphan sell: pre-existing position with unknown cost
+                if total_qty == 0 and remaining > 0:
+                    # Use sell price as entry price — cost basis unknown
+                    orphan_qty = remaining
+                    positions.append(
+                        PositionResult(
+                            symbol=symbol,
+                            asset_type=trade.asset_type,
+                            entry_date=trade.datetime.date(),  # unknown, use exit date
+                            exit_date=trade.datetime.date(),
+                            holding_days=1,
+                            total_quantity=orphan_qty,
+                            avg_entry_price=trade.price,  # unknown cost basis
+                            avg_exit_price=trade.price,
+                            pnl=0.0,
+                            pnl_pct=0.0,
+                            trade_ids=[trade.id],
+                            cost_known=False,
+                        )
+                    )
+
                 if total_qty > 0:
                     avg_entry = total_cost / total_qty
                     pnl = (trade.price - avg_entry) * total_qty
@@ -116,6 +147,7 @@ class PositionBuilder:
                             pnl=pnl,
                             pnl_pct=pnl_pct,
                             trade_ids=sell_trade_ids,
+                            cost_known=True,
                         )
                     )
 
