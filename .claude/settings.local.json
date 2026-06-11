@@ -104,7 +104,9 @@
       "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py::TestResolveHierarchy tests/test_engine/test_whatif.py::TestWhatIfAnalyzeReplace tests/test_engine/test_whatif.py::TestWhatIfAnalyzeRule tests/test_engine/test_market_data.py -v)",
       "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py::TestResolveHierarchy tests/test_engine/test_whatif.py::TestWhatIfAnalyzeReplace tests/test_engine/test_whatif.py::TestWhatIfAnalyzeRule -v)",
       "mcp__filesystem__search_files",
-      "Bash(.venv/Scripts/python -m pytest tests/test_engine/ -v)"
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/ -v)",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_parsers/ -q)"
     ]
   }
 }

@@ -41,7 +41,14 @@ class BaseParser(ABC):
         if filename.endswith(".csv"):
             return pd.read_csv(BytesIO(content))
         elif filename.endswith((".xls", ".xlsx")):
-            return pd.read_excel(BytesIO(content))
+            # Try multiple header rows — some Excel files have title rows before headers
+            for header_row in range(4):
+                df = pd.read_excel(BytesIO(content), header=header_row)
+                # If most columns aren't "Unnamed", we found the right header
+                unnamed_count = sum(1 for c in df.columns if str(c).startswith("Unnamed"))
+                if unnamed_count < len(df.columns) * 0.6:
+                    return df
+            return df  # fallback
         raise ValueError(f"Unsupported file format: {filename}")
 
     @staticmethod
