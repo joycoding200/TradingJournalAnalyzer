@@ -7,6 +7,7 @@ from app.engine.pattern import PatternEngine, PatternResult
 
 # -- helpers ----------------------------------------------------------------
 
+
 @dataclass
 class _Position:
     """Minimal position-like object for testing patterns."""
@@ -66,6 +67,47 @@ def tag_names(pos, all_positions=None, **kwargs) -> set[str]:
     if all_positions is None:
         all_positions = [pos]
     return {t.pattern_name for t in PatternEngine.tag_position(pos, all_positions, **kwargs)}
+
+
+def _make_market_data(
+    dates: list[str],
+    closes: list[float],
+    highs: list[float] | None = None,
+    lows: list[float] | None = None,
+    ma20: float | None = 11.0,
+    ma60: float | None = 10.0,
+    ma5: float | None = None,
+    ma10: float | None = None,
+    volume: list[float] | None = None,
+    avg_volume_20d: float | None = None,
+) -> dict:
+    """Build market-data dict for one symbol, with optional volume data."""
+    if highs is None:
+        highs = [c * 1.02 for c in closes]
+    if lows is None:
+        lows = [c * 0.98 for c in closes]
+    data = {}
+    for i, d in enumerate(dates):
+        entry = {
+            "open": closes[i],
+            "high": highs[i],
+            "low": lows[i],
+            "close": closes[i],
+            "ma5": ma5 if ma5 is not None else closes[i],
+            "ma10": ma10 if ma10 is not None else closes[i],
+            "ma20": ma20 if ma20 is not None else closes[i],
+            "ma60": ma60 if ma60 is not None else closes[i],
+        }
+        if volume is not None:
+            entry["volume"] = volume[i]
+        if avg_volume_20d is not None:
+            entry["avg_volume_20d"] = avg_volume_20d
+        data[d] = entry
+    return {"000001": data}
+
+
+def _market_tags(pos, market_data) -> set[str]:
+    return {t.pattern_name for t in PatternEngine.tag_market_patterns(pos, market_data)}
 
 
 # ============================================================================
@@ -386,76 +428,78 @@ class TestCashTag:
 # ============================================================================
 
 
-def _market_data(
-    dates: list[str],
-    closes: list[float],
-    highs: list[float] | None = None,
-    lows: list[float] | None = None,
-    ma20: float | None = 11.0,
-    ma60: float | None = 10.0,
-) -> dict:
-    """Build minimal market-data dict for one symbol."""
-    if highs is None:
-        highs = [c * 1.02 for c in closes]
-    if lows is None:
-        lows = [c * 0.98 for c in closes]
-    data = {}
-    for i, d in enumerate(dates):
-        data[d] = {
-            "open": closes[i],
-            "high": highs[i],
-            "low": lows[i],
-            "close": closes[i],
-            "ma5": closes[i],
-            "ma10": closes[i],
-            "ma20": ma20 if ma20 is not None else closes[i],
-            "ma60": ma60 if ma60 is not None else closes[i],
-        }
-    return {"000001": data}
-
-
-def _market_tags(pos, market_data) -> set[str]:
-    return {t.pattern_name for t in PatternEngine.tag_market_patterns(pos, market_data)}
-
-
 class TestChaseTag:
     def test_chase_detected(self):
         """Entry close > 15% above 5-days-ago close."""
         dates = [f"2024-01-{d:02d}" for d in range(2, 27)]  # 2..26 = 25 days
         closes = [10.0] * 24 + [11.6]  # entry day (idx 24) close = 11.6 >= +16%
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _market_data(dates, closes)
+        md = _make_market_data(dates, closes)
         assert "CHASE" in _market_tags(pos, md)
 
     def test_not_chase_when_flat(self):
         dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
         closes = [10.0] * 25
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _market_data(dates, closes)
+        md = _make_market_data(dates, closes)
         assert "CHASE" not in _market_tags(pos, md)
 
     def test_not_chase_when_dropping(self):
         dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
         closes = [10.0] * 20 + [9.0] * 5
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _market_data(dates, closes)
+        md = _make_market_data(dates, closes)
         assert "CHASE" not in _market_tags(pos, md)
+
+    def test_chase_full_confidence(self):
+        """All conditions met (5d return, MA deviation, high proximity) -> 0.7."""
+        dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
+        # entry_close=13.0, 5d return=30%, ma20=11 -> 13>12.1,
+        # prev_20d_high=10.2 -> 13>=9.89
+        closes = [10.0] * 24 + [13.0]
+        pos = make_pos(entry_date=date(2024, 1, 26))
+        md = _make_market_data(dates, closes)
+        results = PatternEngine.tag_market_patterns(pos, md)
+        for r in results:
+            if r.pattern_name == "CHASE":
+                assert r.confidence == 0.7
+
+    def test_chase_low_confidence_without_ma_deviation(self):
+        """Only 5d return holds, MA deviation fails -> 0.5."""
+        dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
+        # entry_close=11.6, ma20=11 -> 11.6 > 12.1? No -> MA condition fails
+        # prev_20d_high=10.2 -> 11.6 >= 9.89? Yes -> high proximity OK
+        closes = [10.0] * 24 + [11.6]
+        pos = make_pos(entry_date=date(2024, 1, 26))
+        md = _make_market_data(dates, closes)
+        results = PatternEngine.tag_market_patterns(pos, md)
+        for r in results:
+            if r.pattern_name == "CHASE":
+                assert r.confidence == 0.5
 
 
 class TestBottomTag:
     def test_bottom_detected(self):
-        """Entry close < 15% below 5-days-ago close."""
+        """Entry close < 15% below 5-days-ago close, with downtrend."""
         dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
         closes = [10.0] * 20 + [8.4] * 5  # entry day (idx 24) close = 8.4 <= -16%
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _market_data(dates, closes)
+        md = _make_market_data(dates, closes, ma20=10.0, ma60=11.0)  # downtrend
         assert "BOTTOM" in _market_tags(pos, md)
 
     def test_not_bottom_when_flat(self):
         dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
         closes = [10.0] * 25
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _market_data(dates, closes)
+        md = _make_market_data(dates, closes, ma20=10.0, ma60=11.0)
+        assert "BOTTOM" not in _market_tags(pos, md)
+
+    def test_not_bottom_when_uptrend(self):
+        """5d drop > 15% but in uptrend (ma20 > ma60) -> no BOTTOM."""
+        dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
+        closes = [10.0] * 20 + [8.4] * 5
+        pos = make_pos(entry_date=date(2024, 1, 26))
+        md = _make_market_data(dates, closes)  # default ma20=11, ma60=10 -> uptrend
         assert "BOTTOM" not in _market_tags(pos, md)
 
 
@@ -477,12 +521,13 @@ class TestBreakoutTag:
         closes.append(12.5)
 
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _market_data(dates, closes, highs=highs)
+        md = _make_market_data(dates, closes, highs=highs)
 
         tags = _market_tags(pos, md)
         assert "BREAKOUT" in tags
 
-    def test_confidence(self):
+    def test_breakout_backward_compat_confidence(self):
+        """Without volume data, confidence is 0.5 (backward compat)."""
         dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
         highs = []
         closes = []
@@ -494,19 +539,75 @@ class TestBreakoutTag:
         closes.append(12.5)
 
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _market_data(dates, closes, highs=highs)
+        md = _make_market_data(dates, closes, highs=highs)
+        results = PatternEngine.tag_market_patterns(pos, md)
+        for r in results:
+            if r.pattern_name == "BREAKOUT":
+                assert r.confidence == 0.5
+
+    def test_breakout_with_volume_confirmation(self):
+        """Breakout with sufficient volume gets confidence 0.7."""
+        dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
+        highs = []
+        closes = []
+        volumes = []
+        for i in range(24):
+            h = 10.0 + (i % 8) * 0.2
+            highs.append(h)
+            closes.append(h * 0.98)
+            volumes.append(100000)
+        # Entry day
+        highs.append(13.0)
+        closes.append(12.5)
+        volumes.append(300000)  # 300k > 1.5 * 150k = 225k
+
+        pos = make_pos(entry_date=date(2024, 1, 26))
+        md = _make_market_data(
+            dates, closes, highs=highs,
+            volume=volumes, avg_volume_20d=150000.0,
+        )
+        tags = _market_tags(pos, md)
+        assert "BREAKOUT" in tags
+
         results = PatternEngine.tag_market_patterns(pos, md)
         for r in results:
             if r.pattern_name == "BREAKOUT":
                 assert r.confidence == 0.7
 
+    def test_not_breakout_insufficient_volume(self):
+        """Price breaks out but volume is insufficient -> no tag."""
+        dates = [f"2024-01-{d:02d}" for d in range(2, 27)]
+        highs = []
+        closes = []
+        volumes = []
+        for i in range(24):
+            h = 10.0 + (i % 8) * 0.2
+            highs.append(h)
+            closes.append(h * 0.98)
+            volumes.append(100000)
+        # Entry day
+        highs.append(13.0)
+        closes.append(12.5)
+        volumes.append(100000)  # 100k < 1.5 * 150k = 225k -> insufficient
+
+        pos = make_pos(entry_date=date(2024, 1, 26))
+        md = _make_market_data(
+            dates, closes, highs=highs,
+            volume=volumes, avg_volume_20d=150000.0,
+        )
+        assert "BREAKOUT" not in _market_tags(pos, md)
+
 
 class TestTrendTag:
-    def test_trend_when_ma20_above_ma60(self):
+    def test_trend_when_ma20_above_ma60_and_price_above_ma20(self):
+        """ma20 > ma60 and close > ma20 -> TREND."""
         pos = make_pos(entry_date=date(2024, 1, 15))
-        md = _market_data(
+        # entry_date = Jan 15, which is index 13 in the dates list
+        # set entry day close > ma20=11.0
+        closes = [10.0] * 13 + [12.0] + [10.0] * 4
+        md = _make_market_data(
             [f"2024-01-{d:02d}" for d in range(2, 20)],
-            [10.0] * 18,
+            closes,
             ma20=11.0,
             ma60=10.0,
         )
@@ -514,7 +615,7 @@ class TestTrendTag:
 
     def test_not_trend_when_ma20_below_ma60(self):
         pos = make_pos(entry_date=date(2024, 1, 15))
-        md = _market_data(
+        md = _make_market_data(
             [f"2024-01-{d:02d}" for d in range(2, 20)],
             [10.0] * 18,
             ma20=10.0,
@@ -522,13 +623,29 @@ class TestTrendTag:
         )
         assert "TREND" not in _market_tags(pos, md)
 
-
-class TestCounterTrendTag:
-    def test_counter_trend_when_ma20_below_ma60(self):
+    def test_not_trend_when_price_below_ma20(self):
+        """ma20 > ma60 but price below ma20 -> no TREND."""
         pos = make_pos(entry_date=date(2024, 1, 15))
-        md = _market_data(
+        ma20 = 11.0
+        # entry close = 10.0 < ma20 = 11.0 -> price confirmation fails
+        md = _make_market_data(
             [f"2024-01-{d:02d}" for d in range(2, 20)],
             [10.0] * 18,
+            ma20=ma20,
+            ma60=10.0,
+        )
+        assert "TREND" not in _market_tags(pos, md)
+
+
+class TestCounterTrendTag:
+    def test_counter_trend_when_ma20_below_ma60_and_price_below_ma20(self):
+        """ma20 < ma60 and close < ma20 -> COUNTER_TREND."""
+        pos = make_pos(entry_date=date(2024, 1, 15))
+        # entry_date = Jan 15 (index 13), set close < ma20=10.0
+        closes = [10.0] * 13 + [9.5] + [10.0] * 4
+        md = _make_market_data(
+            [f"2024-01-{d:02d}" for d in range(2, 20)],
+            closes,
             ma20=10.0,
             ma60=11.0,
         )
@@ -536,11 +653,24 @@ class TestCounterTrendTag:
 
     def test_not_counter_trend_when_ma20_above_ma60(self):
         pos = make_pos(entry_date=date(2024, 1, 15))
-        md = _market_data(
+        md = _make_market_data(
             [f"2024-01-{d:02d}" for d in range(2, 20)],
             [10.0] * 18,
             ma20=11.0,
             ma60=10.0,
+        )
+        assert "COUNTER_TREND" not in _market_tags(pos, md)
+
+    def test_not_counter_trend_when_price_above_ma20(self):
+        """ma20 < ma60 but price above ma20 -> no COUNTER_TREND."""
+        pos = make_pos(entry_date=date(2024, 1, 15))
+        # entry close = 12.0 > ma20 = 10.0 -> price confirmation fails
+        closes = [10.0] * 13 + [12.0] + [10.0] * 4
+        md = _make_market_data(
+            [f"2024-01-{d:02d}" for d in range(2, 20)],
+            closes,
+            ma20=10.0,
+            ma60=11.0,
         )
         assert "COUNTER_TREND" not in _market_tags(pos, md)
 
@@ -560,7 +690,7 @@ class TestBreakdownTag:
             exit_date=date(2024, 1, 27),
             holding_days=25,
         )
-        md = _market_data(dates, closes, highs=highs, lows=lows)
+        md = _make_market_data(dates, closes, highs=highs, lows=lows)
         assert "BREAKDOWN" in _market_tags(pos, md)
 
     def test_not_breakdown_when_normal(self):
@@ -572,7 +702,7 @@ class TestBreakdownTag:
             exit_date=date(2024, 1, 27),
             holding_days=25,
         )
-        md = _market_data(dates, closes, lows=lows)
+        md = _make_market_data(dates, closes, lows=lows)
         assert "BREAKDOWN" not in _market_tags(pos, md)
 
 

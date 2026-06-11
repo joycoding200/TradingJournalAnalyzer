@@ -12,8 +12,8 @@ patterns:
     market_dependent: true
     confidence: 0.7
     rule:
-      summary: 买入前 5 天涨幅 > 15%
-      detail: entry_close vs 5d_ago_close → change > +15%
+      summary: 买入前5天涨幅>15%，且高于20日均线10%以上，且接近20日高点
+      detail: entry_close vs 5d_ago_close > +15%, entry_close > ma20*1.10, entry_close >= max(prev_20d_high)*0.97
     description: 追涨买入，买入时股价已连续大幅上涨
 
   - name: BOTTOM
@@ -22,9 +22,9 @@ patterns:
     market_dependent: true
     confidence: 0.7
     rule:
-      summary: 买入前 5 天跌幅 > 15%
-      detail: entry_close vs 5d_ago_close → change < -15%
-    description: 抄底买入，买入时股价已连续大幅下跌
+      summary: 买入前5天跌幅>15%，且均线空头排列(20MA<60MA)
+      detail: entry_close vs 5d_ago_close < -15%, ma20 < ma60 at entry date
+    description: 抄底买入，在下跌趋势中买入
 
   - name: BREAKOUT
     label: 突破
@@ -32,9 +32,9 @@ patterns:
     market_dependent: true
     confidence: 0.7
     rule:
-      summary: 买入日价格创 20 日新高
-      detail: entry_close > max(prev_20d_high)
-    description: 突破买入，价格突破近期高点
+      summary: 买入日价格创20日新高，且成交量放大1.5倍以上
+      detail: entry_close > max(prev_20d_high), entry_volume > avg_volume_20d * 1.5
+    description: 突破买入，价格突破近期高点并伴随成交量放大
 
   - name: TREND
     label: 趋势
@@ -42,9 +42,9 @@ patterns:
     market_dependent: true
     confidence: 0.7
     rule:
-      summary: 买入时 20MA > 60MA
-      detail: ma20 > ma60 at entry date
-    description: 顺势交易，在均线多头排列时入场
+      summary: 买入时20MA>60MA且价格在20MA之上
+      detail: ma20 > ma60 AND entry_close > ma20 at entry date
+    description: 顺势交易，在均线多头排列且价格位于均线上方时入场
 
   - name: COUNTER_TREND
     label: 逆势
@@ -52,9 +52,9 @@ patterns:
     market_dependent: true
     confidence: 0.7
     rule:
-      summary: 买入时 20MA < 60MA
-      detail: ma20 < ma60 at entry date
-    description: 逆势交易，在均线空头排列时入场
+      summary: 买入时20MA<60MA且价格在20MA之下
+      detail: ma20 < ma60 AND entry_close < ma20 at entry date
+    description: 逆势交易，在均线空头排列且价格位于均线下方时入场
 
   - name: BREAKDOWN
     label: 破位

@@ -82,7 +82,21 @@
       "Bash(gh auth *)",
       "Bash(npx tsc *)",
       "Bash(.venv/Scripts/python -c \"from app.engine.pattern_config import PATTERNS, LABEL_MAP; print\\(f'{len\\(PATTERNS\\)} patterns loaded'\\); print\\(LABEL_MAP\\)\")",
-      "Bash(.venv/Scripts/python -m pytest tests/test_api/test_analysis.py::TestAnalysisStats::test_stats_returns_kpis -v --tb=short)"
+      "Bash(.venv/Scripts/python -m pytest tests/test_api/test_analysis.py::TestAnalysisStats::test_stats_returns_kpis -v --tb=short)",
+      "Bash(.venv\\\\Scripts\\\\python.exe -m pytest --collect-only -q)",
+      "Bash(backend/.venv/Scripts/python.exe -m pytest tests/ -q --collect-only)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -q --collect-only)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_engine/test_pattern.py -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_engine/test_pattern.py -v -k \"Pyramid\")",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_engine/test_pattern.py -v -k \"AverageDown\")",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_engine/test_pattern.py -v -k \"Turn or scalp_and_turn\")",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_api/test_analysis.py::TestAnalysisWhatIf::test_whatif_returns_items -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_api/test_analysis.py::TestAnalysisWhatIf::test_whatif_returns_items -v --tb=short)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_api/test_analysis.py::TestAnalysisStats::test_stats_returns_kpis -v --tb=long)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(git pull *)",
+      "Bash(git stash *)"
     ]
   }
 }

@@ -230,10 +230,15 @@ class PatternEngine:
     ) -> list[PatternResult]:
         """Tag entry/exit behavior using price & moving-average data.
 
+        Expected market_data structure per date:
+          {open, high, low, close, ma5, ma10, ma20, ma60}
+        Optionally also:
+          {volume, avg_volume_20d}
+
         Args:
             pos: A position-like object with symbol, entry_date, exit_date.
             market_data: Nested dict keyed by symbol -> date_str ->
-                {open, high, low, close, ma5, ma10, ma20, ma60}.
+                per-date dict (see above).
 
         Returns:
             List of PatternResult instances.
@@ -257,15 +262,27 @@ class PatternEngine:
         entry_close = entry_data["close"]
 
         # -- CHASE: entry close vs 5 days ago > +15% --------------------
+        #   Full confidence (0.7) when MA deviation AND high proximity
+        #   both hold. Otherwise lower confidence (0.5).
         if entry_idx >= 5:
             d5 = dates[entry_idx - 5]
             close_5 = symbol_data[d5]["close"]
             chg = (entry_close - close_5) / close_5
             if chg > 0.15:
+                has_ma_deviation = entry_close > entry_data.get("ma20", float("inf")) * 1.10
+                has_high_proximity = False
+                if entry_idx >= 20:
+                    prev_highs = [
+                        symbol_data[dates[i]]["high"]
+                        for i in range(entry_idx - 20, entry_idx)
+                    ]
+                    max_high = max(prev_highs)
+                    has_high_proximity = entry_close >= max_high * 0.97
+                confidence = 0.7 if (has_ma_deviation and has_high_proximity) else 0.5
                 tags.append(
                     PatternResult(
                         "CHASE",
-                        0.7,
+                        confidence,
                         {
                             "change_pct": round(chg, 4),
                             "from_date": d5,
@@ -274,23 +291,28 @@ class PatternEngine:
                 )
 
         # -- BOTTOM: entry close vs 5 days ago < -15% -------------------
+        #   Must also be in downtrend (ma20 < ma60).
         if entry_idx >= 5:
             d5 = dates[entry_idx - 5]
             close_5 = symbol_data[d5]["close"]
             chg = (entry_close - close_5) / close_5
             if chg < -0.15:
-                tags.append(
-                    PatternResult(
-                        "BOTTOM",
-                        0.7,
-                        {
-                            "change_pct": round(chg, 4),
-                            "from_date": d5,
-                        },
+                ma20 = entry_data.get("ma20")
+                ma60 = entry_data.get("ma60")
+                if ma20 is not None and ma60 is not None and ma20 < ma60:
+                    tags.append(
+                        PatternResult(
+                            "BOTTOM",
+                            0.7,
+                            {
+                                "change_pct": round(chg, 4),
+                                "from_date": d5,
+                            },
+                        )
                     )
-                )
 
         # -- BREAKOUT: entry close > max(prev 20d high) ----------------
+        #   Volume confirmation when volume data is available.
         if entry_idx >= 20:
             prev_highs = [
                 symbol_data[dates[i]]["high"]
@@ -298,21 +320,51 @@ class PatternEngine:
             ]
             max_high = max(prev_highs)
             if entry_close > max_high:
-                tags.append(
-                    PatternResult(
-                        "BREAKOUT",
-                        0.7,
-                        {
-                            "entry_close": entry_close,
-                            "max_prev_20_high": max_high,
-                        },
-                    )
+                entry_volume = entry_data.get("volume")
+                avg_volume_20d = entry_data.get("avg_volume_20d")
+                has_volume_data = (
+                    entry_volume is not None and avg_volume_20d is not None
                 )
 
-        # -- TREND / COUNTER_TREND: MA relationship --------------------
-        _maybe_ma_tag(tags, entry_data, "TREND", lambda ma20, ma60: ma20 > ma60)
+                if has_volume_data:
+                    if entry_volume > avg_volume_20d * 1.5:
+                        tags.append(
+                            PatternResult(
+                                "BREAKOUT",
+                                0.7,
+                                {
+                                    "entry_close": entry_close,
+                                    "max_prev_20_high": max_high,
+                                    "volume": entry_volume,
+                                    "avg_volume_20d": avg_volume_20d,
+                                },
+                            )
+                        )
+                else:
+                    # Backward compat: no volume data, tag at lower confidence
+                    tags.append(
+                        PatternResult(
+                            "BREAKOUT",
+                            0.5,
+                            {
+                                "entry_close": entry_close,
+                                "max_prev_20_high": max_high,
+                            },
+                        )
+                    )
+
+        # -- TREND / COUNTER_TREND: MA relationship + price confirmation -
         _maybe_ma_tag(
-            tags, entry_data, "COUNTER_TREND", lambda ma20, ma60: ma20 < ma60
+            tags,
+            entry_data,
+            "TREND",
+            lambda ma20, ma60: ma20 > ma60 and entry_close > ma20,
+        )
+        _maybe_ma_tag(
+            tags,
+            entry_data,
+            "COUNTER_TREND",
+            lambda ma20, ma60: ma20 < ma60 and entry_close < ma20,
         )
 
         # -- BREAKDOWN: exit close < min(prev 20d low) -----------------
@@ -340,6 +392,7 @@ class PatternEngine:
 
 
 # -- helpers ----------------------------------------------------------------
+
 
 def _maybe_ma_tag(
     tags: list[PatternResult],
