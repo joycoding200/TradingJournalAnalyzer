@@ -107,7 +107,7 @@ def get_stats(
     total_trades = len(trades)
     total_positions = len(positions)
     win_count = sum(1 for p in positions if p.pnl > 0)
-    win_rate = (win_count / total_positions * 100) if total_positions > 0 else 0.0
+    win_rate = (win_count / total_positions) if total_positions > 0 else 0.0
     total_pnl = sum(p.pnl for p in positions)
     avg_holding_days = (
         sum(p.holding_days for p in positions) / total_positions

@@ -1,0 +1,20 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - link "TradeLens" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e6]:
+      - link "上传" [ref=e7] [cursor=pointer]:
+        - /url: /upload
+      - link "历史" [ref=e8] [cursor=pointer]:
+        - /url: /history
+      - button "退出" [ref=e9] [cursor=pointer]
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - heading "分析面板" [level=1] [ref=e13]
+        - button "生成 AI 报告" [ref=e14] [cursor=pointer]
+      - generic [ref=e15]:
+        - button "统计概览" [ref=e16] [cursor=pointer]
+        - button "归因分析" [ref=e17] [cursor=pointer]
+        - button "What If 回测" [ref=e18] [cursor=pointer]
+      - generic [ref=e19]: 加载中...

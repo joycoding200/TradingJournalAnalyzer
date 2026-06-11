@@ -1,0 +1,79 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - navigation [ref=e4]:
+      - link "TradeLens" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e6]:
+        - link "上传" [ref=e7] [cursor=pointer]:
+          - /url: /upload
+        - link "历史" [ref=e8] [cursor=pointer]:
+          - /url: /history
+        - button "退出" [ref=e9] [cursor=pointer]
+    - main [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - heading "分析面板" [level=1] [ref=e13]
+          - button "生成 AI 报告" [ref=e14] [cursor=pointer]
+        - generic [ref=e15]:
+          - button "统计概览" [ref=e16] [cursor=pointer]
+          - button "归因分析" [active] [ref=e17] [cursor=pointer]
+          - button "What If 回测" [ref=e18] [cursor=pointer]
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - heading "各行为模式统计" [level=2] [ref=e41]
+            - table [ref=e43]:
+              - rowgroup [ref=e44]:
+                - row "行为 次数 胜率 总盈亏 均收益率" [ref=e45]:
+                  - columnheader "行为" [ref=e46]
+                  - columnheader "次数" [ref=e47]
+                  - columnheader "胜率" [ref=e48]
+                  - columnheader "总盈亏" [ref=e49]
+                  - columnheader "均收益率" [ref=e50]
+              - rowgroup [ref=e51]:
+                - row "止盈 4 100.0% +6000.00 2.75%" [ref=e52]:
+                  - cell "止盈" [ref=e53]
+                  - cell "4" [ref=e54]
+                  - cell "100.0%" [ref=e55]
+                  - cell "+6000.00" [ref=e56]
+                  - cell "2.75%" [ref=e57]
+                - row "空仓 4 100.0% +6000.00 2.75%" [ref=e58]:
+                  - cell "空仓" [ref=e59]
+                  - cell "4" [ref=e60]
+                  - cell "100.0%" [ref=e61]
+                  - cell "+6000.00" [ref=e62]
+                  - cell "2.75%" [ref=e63]
+                - row "波段 6 66.7% +4000.00 1.00%" [ref=e64]:
+                  - cell "波段" [ref=e65]
+                  - cell "6" [ref=e66]
+                  - cell "66.7%" [ref=e67]
+                  - cell "+4000.00" [ref=e68]
+                  - cell "1.00%" [ref=e69]
+                - row "补仓 2 0.0% -2000.00 -2.50%" [ref=e70]:
+                  - cell "补仓" [ref=e71]
+                  - cell "2" [ref=e72]
+                  - cell "0.0%" [ref=e73]
+                  - cell "-2000.00" [ref=e74]
+                  - cell "-2.50%" [ref=e75]
+                - row "止损 2 0.0% -2000.00 -2.50%" [ref=e76]:
+                  - cell "止损" [ref=e77]
+                  - cell "2" [ref=e78]
+                  - cell "0.0%" [ref=e79]
+                  - cell "-2000.00" [ref=e80]
+                  - cell "-2.50%" [ref=e81]
+          - generic [ref=e82]:
+            - heading "各行为标签胜率" [level=3] [ref=e83]
+            - application [ref=e86]:
+              - generic [ref=e111]:
+                - generic [ref=e112]:
+                  - generic [ref=e114]: 止盈
+                  - generic [ref=e116]: 空仓
+                  - generic [ref=e118]: 波段
+                  - generic [ref=e120]: 补仓
+                  - generic [ref=e122]: 止损
+                - generic [ref=e123]:
+                  - generic [ref=e125]: 0%
+                  - generic [ref=e127]: 25%
+                  - generic [ref=e129]: 50%
+                  - generic [ref=e131]: 75%
+                  - generic [ref=e133]: 100%
+  - generic [ref=e134]: "0"

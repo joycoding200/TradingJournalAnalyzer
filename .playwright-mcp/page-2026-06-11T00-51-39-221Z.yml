@@ -1,0 +1,55 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - navigation [ref=e4]:
+      - link "TradeLens" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e6]:
+        - link "上传" [ref=e7] [cursor=pointer]:
+          - /url: /upload
+        - link "历史" [ref=e8] [cursor=pointer]:
+          - /url: /history
+        - button "退出" [ref=e9] [cursor=pointer]
+    - main [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - heading "分析面板" [level=1] [ref=e13]
+          - button "生成 AI 报告" [ref=e14] [cursor=pointer]
+        - generic [ref=e15]:
+          - button "统计概览" [ref=e16] [cursor=pointer]
+          - button "归因分析" [ref=e17] [cursor=pointer]
+          - button "What If 回测" [active] [ref=e18] [cursor=pointer]
+        - generic [ref=e135]:
+          - heading "删除特定行为后的收益变化" [level=2] [ref=e136]
+          - generic [ref=e137]:
+            - generic [ref=e138]:
+              - generic [ref=e139]: 止盈
+              - generic [ref=e140]: "伤害指数: 100%"
+            - generic [ref=e144]:
+              - generic [ref=e145]: "原始: 0.9%"
+              - generic [ref=e146]: "删除后: -2.5%"
+              - generic [ref=e147]: Δ -3.4%
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - generic [ref=e150]: 空仓
+              - generic [ref=e151]: "伤害指数: 100%"
+            - generic [ref=e155]:
+              - generic [ref=e156]: "原始: 0.9%"
+              - generic [ref=e157]: "删除后: -2.5%"
+              - generic [ref=e158]: Δ -3.4%
+          - generic [ref=e159]:
+            - generic [ref=e160]:
+              - generic [ref=e161]: 补仓
+              - generic [ref=e162]: "伤害指数: 23%"
+            - generic [ref=e166]:
+              - generic [ref=e167]: "原始: 0.9%"
+              - generic [ref=e168]: "删除后: 1.7%"
+              - generic [ref=e169]: Δ 0.8%
+          - generic [ref=e170]:
+            - generic [ref=e171]:
+              - generic [ref=e172]: 止损
+              - generic [ref=e173]: "伤害指数: 23%"
+            - generic [ref=e177]:
+              - generic [ref=e178]: "原始: 0.9%"
+              - generic [ref=e179]: "删除后: 1.7%"
+              - generic [ref=e180]: Δ 0.8%
+  - generic [ref=e134]: "0"

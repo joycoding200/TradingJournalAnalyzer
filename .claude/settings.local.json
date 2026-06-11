@@ -71,7 +71,9 @@
       "mcp__plugin_playwright_playwright__browser_file_upload",
       "mcp__plugin_playwright_playwright__browser_evaluate",
       "mcp__plugin_playwright_playwright__browser_handle_dialog",
-      "mcp__plugin_playwright_playwright__browser_console_messages"
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('win_rate:', d.get\\('win_rate'\\)\\); print\\('total_trades:', d.get\\('total_trades'\\)\\); print\\('total_pnl:', d.get\\('total_pnl'\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('win_rate:', d['win_rate']\\)\")"
     ]
   }
 }
