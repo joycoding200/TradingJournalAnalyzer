@@ -4,6 +4,10 @@
 
 **核心卖点：What If 反事实回测** — 删除特定行为后回测账户收益变化，量化每种行为对账户的伤害程度。
 
+License: MIT + Commons Clause
+
+This project is open source for non-commercial use only.
+
 ## 技术栈
 
 | 层 | 技术 |
