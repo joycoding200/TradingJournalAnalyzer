@@ -23,7 +23,7 @@ export default function Analysis() {
     if (!id) return;
     genReport.mutate(id, {
       onSuccess: (data) => {
-        navigate(`/report/${data.id}`);
+        navigate(`/report/${data.report_id}`);
       },
     });
   };
