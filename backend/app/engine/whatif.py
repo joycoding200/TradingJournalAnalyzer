@@ -11,6 +11,7 @@ class AttributionItem:
     what_if_return: float
     delta: float
     contribution_pct: float  # percentage contribution to total PnL
+    absolute_impact: float = 0.0  # absolute PnL impact (total_pnl - filtered_pnl)
 
 
 class ProfitAttribution:
@@ -79,6 +80,7 @@ class ProfitAttribution:
                 else 0.0
             )
 
+            absolute_impact = total_pnl - filtered_pnl
             results.append(
                 AttributionItem(
                     removed_pattern=pattern_name,
@@ -86,6 +88,7 @@ class ProfitAttribution:
                     what_if_return=round(what_if_return, 4),
                     delta=round(what_if_return - original_return, 4),
                     contribution_pct=0.0,
+                    absolute_impact=round(absolute_impact, 2),
                 )
             )
 

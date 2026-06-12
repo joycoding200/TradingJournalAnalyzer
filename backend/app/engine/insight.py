@@ -87,5 +87,5 @@ class InsightEngine:
                 )
             )
 
-        results.sort(key=lambda x: x.expectancy, reverse=True)
+        results.sort(key=lambda x: x.total_pnl, reverse=True)
         return results

@@ -28,6 +28,9 @@ class PositionResult:
     pnl_pct: float
     trade_ids: list[str] = field(default_factory=list)
     cost_known: bool = True  # False if entry price is estimated (pre-existing position)
+    entry_count: int = 0  # Number of buy batches (P0-1 grouped)
+    total_buys: float = 0.0  # Total buy quantity (P0-1 grouped)
+    total_sells: float = 0.0  # Total sell quantity (P0-1 grouped)
 
 
 class PositionBuilder:
@@ -150,5 +153,160 @@ class PositionBuilder:
                             cost_known=True,
                         )
                     )
+
+        return positions
+
+    # ------------------------------------------------------------------
+    # P0-1: Group-based reconstruction (PRD-compliant)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def build_grouped(trades) -> list[PositionResult]:
+        """PRD-compliant: merge all trades for same symbol into unified positions.
+
+        Unlike build() which uses FIFO lot matching, this method groups
+        consecutive buys and sells for the same symbol into ONE position
+        when cumulative sells >= cumulative buys. Weighted average prices
+        are used for both entry and exit.
+
+        Args:
+            trades: Iterable of objects with attributes:
+                symbol, asset_type, datetime, side, quantity, price, id.
+
+        Returns:
+            List of PositionResult with merged trades.
+        """
+        by_symbol: dict[str, list] = {}
+        for t in trades:
+            by_symbol.setdefault(t.symbol, []).append(t)
+
+        positions: list[PositionResult] = []
+        for symbol, symbol_trades in by_symbol.items():
+            sorted_trades = sorted(symbol_trades, key=lambda t: t.datetime)
+            positions.extend(
+                PositionBuilder._group_for_symbol(symbol, sorted_trades)
+            )
+        return positions
+
+    @staticmethod
+    def _group_for_symbol(symbol: str, trades) -> list[PositionResult]:
+        """Build grouped positions for a single symbol.
+
+        Merges consecutive trades into one position when cumulative
+        sells >= cumulative buys. Handles orphan sells (no prior buy)
+        as positions with unknown cost basis.
+        """
+        positions: list[PositionResult] = []
+        buy_batches: list = []  # (qty, price, id, dt)
+        sell_batches: list = []  # (qty, price, id, dt)
+        cum_buys = 0.0
+        cum_sells = 0.0
+
+        for trade in trades:
+            if trade.side == "BUY":
+                buy_batches.append(
+                    (trade.quantity, trade.price, trade.id, trade.datetime)
+                )
+                cum_buys += trade.quantity
+            else:  # SELL
+                sell_batches.append(
+                    (trade.quantity, trade.price, trade.id, trade.datetime)
+                )
+                cum_sells += trade.quantity
+
+            # Orphan sell: sell with no prior buys
+            if cum_sells > 0 and cum_buys == 0:
+                orphan_qty = cum_sells
+                last_sell_price = sell_batches[-1][1]
+                all_ids = [s[2] for s in sell_batches]
+                first_dt = sell_batches[0][3]
+                last_dt = sell_batches[-1][3]
+                positions.append(
+                    PositionResult(
+                        symbol=symbol,
+                        asset_type=trade.asset_type,
+                        entry_date=first_dt.date(),
+                        exit_date=last_dt.date(),
+                        holding_days=max((last_dt.date() - first_dt.date()).days, 1),
+                        total_quantity=orphan_qty,
+                        avg_entry_price=last_sell_price,
+                        avg_exit_price=last_sell_price,
+                        pnl=0.0,
+                        pnl_pct=0.0,
+                        trade_ids=all_ids,
+                        cost_known=False,
+                        total_sells=orphan_qty,
+                    )
+                )
+                sell_batches = []
+                cum_sells = 0
+                continue
+
+            # When sells >= buys (and there were buys), close the position
+            if cum_sells >= cum_buys and cum_buys > 0:
+                total_buy_qty = sum(b[0] for b in buy_batches)
+                total_buy_cost = sum(b[0] * b[1] for b in buy_batches)
+                avg_entry = total_buy_cost / total_buy_qty if total_buy_qty > 0 else 0.0
+
+                # Match sells against buys proportionally
+                matched_sell_qty = 0.0
+                matched_sell_revenue = 0.0
+                remaining = cum_buys
+                for s in sell_batches:
+                    take = min(s[0], remaining)
+                    matched_sell_qty += take
+                    matched_sell_revenue += take * s[1]
+                    remaining -= take
+                    if remaining <= 0:
+                        break
+
+                avg_exit = matched_sell_revenue / matched_sell_qty if matched_sell_qty > 0 else 0.0
+                pnl = matched_sell_revenue - total_buy_cost
+
+                entry_date = buy_batches[0][3].date()
+                exit_date = sell_batches[0][3].date()
+
+                all_ids = [b[2] for b in buy_batches] + [s[2] for s in sell_batches]
+
+                excess = cum_sells - cum_buys
+                num_buys = len(buy_batches)
+
+                positions.append(
+                    PositionResult(
+                        symbol=symbol,
+                        asset_type=trade.asset_type,
+                        entry_date=entry_date,
+                        exit_date=exit_date,
+                        holding_days=max((exit_date - entry_date).days, 1),
+                        total_quantity=total_buy_qty,
+                        avg_entry_price=round(avg_entry, 4),
+                        avg_exit_price=round(avg_exit, 4),
+                        pnl=round(pnl, 2),
+                        pnl_pct=round(pnl / total_buy_cost, 4) if total_buy_cost > 0 else 0.0,
+                        trade_ids=all_ids,
+                        cost_known=True,
+                        entry_count=num_buys,
+                        total_buys=cum_buys,
+                        total_sells=cum_sells,
+                    )
+                )
+
+                # Reset for next cycle, carry over excess sells
+                buy_batches = []
+                cum_buys = 0
+
+                if excess > 0:
+                    remaining_excess = excess
+                    new_sell_batches = []
+                    for s in reversed(sell_batches):
+                        if remaining_excess > 0:
+                            take = min(s[0], remaining_excess)
+                            new_sell_batches.insert(0, (take, s[1], s[2], s[3]))
+                            remaining_excess -= take
+                    sell_batches = new_sell_batches
+                    cum_sells = excess
+                else:
+                    sell_batches = []
+                    cum_sells = 0
 
         return positions

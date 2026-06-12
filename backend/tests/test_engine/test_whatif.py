@@ -262,3 +262,34 @@ class TestProfitAttributionAnalyzeRule:
         for r in results:
             assert hasattr(r, "contribution_pct")
             assert not hasattr(r, "impact_score")
+
+    def test_attribution_item_has_absolute_impact(self):
+        """Verify AttributionItem has absolute_impact field."""
+        positions = [
+            make_pos(pnl=500.0),
+            make_pos(pnl=-200.0),
+            make_pos(pnl=50.0),
+        ]
+        patterns_map = {0: ["GOOD"], 1: ["BAD"], 2: ["MEH"]}
+        results = ProfitAttribution.attribution_analysis(positions, patterns_map)
+        for r in results:
+            assert hasattr(r, "absolute_impact")
+
+    def test_absolute_impact_is_correct(self):
+        """absolute_impact = total_pnl - filtered_pnl (PnL contributed by pattern)."""
+        positions = [
+            make_pos(pnl=500.0),
+            make_pos(pnl=-200.0),
+        ]
+        patterns_map = {0: ["GOOD"], 1: ["BAD"]}
+        results = ProfitAttribution.attribution_analysis(positions, patterns_map)
+        # total_pnl = 300, total_invested = 2000, original_return = 0.15
+        # GOOD removed: filtered_pnl = -200, filtered_invested = 1000 -> what_if_return = -0.2
+        #   absolute_impact = 300 - (-200) = 500
+        # BAD removed: filtered_pnl = 500, filtered_invested = 1000 -> what_if_return = 0.5
+        #   absolute_impact = 300 - 500 = -200
+        for r in results:
+            if r.removed_pattern == "GOOD":
+                assert r.absolute_impact == 500.0
+            if r.removed_pattern == "BAD":
+                assert r.absolute_impact == -200.0

@@ -173,7 +173,7 @@ patterns:
     description: 大幅盈利，收益率超过 20%
 
   # ============================================================
-  # Phase 3 — 心理行为标签（部分依赖行情）
+  # Phase 3 — 心理行为标签（AI推测层，不出现在硬标签中）
   # ============================================================
   - name: FOMO
     label: 害怕错过
@@ -184,43 +184,3 @@ patterns:
       summary: 连续上涨后追高买入（接近日内高点）
       detail: 5日内>=3天上涨, 且买入价接近日内高点(>=high*0.98)
     description: 害怕错过上涨，在连续上涨后追高买入
-
-  - name: REVENGE
-    label: 报复交易
-    module: risk
-    market_dependent: false
-    confidence: 0.7
-    rule:
-      summary: 亏损后24小时内开新仓
-      detail: prior position pnl < 0 AND (entry_date - prior.exit_date).days <= 1
-    description: 亏损后急于翻本，在短时间内再次交易
-
-  - name: OVERTRADING
-    label: 过度交易
-    module: risk
-    market_dependent: false
-    confidence: 0.7
-    rule:
-      summary: 当日交易频率显著高于平均
-      detail: current_day_count > avg_positions_per_day * 2
-    description: 某日交易数量远超个人平均水平，属于过度交易
-
-  - name: HOLD_LOSER
-    label: 死扛亏损
-    module: risk
-    market_dependent: false
-    confidence: 0.7
-    rule:
-      summary: 亏损持仓时间显著长于盈利持仓
-      detail: avg_holding_losers > avg_holding_winners * 1.5 AND pos.pnl < 0 AND holding_days > avg_holding_losers
-    description: 死扛亏损头寸，持有亏损股票时间远长于盈利股票
-
-  - name: CUT_WINNER
-    label: 过早止盈
-    module: risk
-    market_dependent: false
-    confidence: 0.7
-    rule:
-      summary: 盈利持仓时间显著短于亏损持仓
-      detail: avg_holding_winners < avg_holding_losers * 0.5 AND pos.pnl > 0 AND holding_days < avg_holding_winners
-    description: 过早卖出盈利头寸，持有盈利股票时间远短于亏损股票

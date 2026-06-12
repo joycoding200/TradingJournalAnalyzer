@@ -108,7 +108,21 @@
       "Bash(.venv/Scripts/python -c ' *)",
       "Bash(.venv/Scripts/python -m pytest tests/test_parsers/ -q)",
       "Bash(taskkill //F //IM node.exe)",
-      "Bash(taskkill //F //IM python.exe)"
+      "Bash(taskkill //F //IM python.exe)",
+      "Skill(update-config)",
+      "Bash(npx skills *)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_position.py -q)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py -q)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py -q --tb=line)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py -x --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py::TestDetectPsychologicalPatterns --tb=long)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/ --tb=short)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "chrome-devtools"
+  ]
 }

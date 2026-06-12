@@ -1,6 +1,6 @@
-"""Tests for pattern engine -- all 20 behavioral tags (Phase 3)."""
+"""Tests for pattern engine -- behavioral tags."""
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from app.engine.pattern import PatternEngine, PatternResult
 
@@ -28,10 +28,11 @@ class _Position:
 
 @dataclass
 class _Trade:
-    """Minimal trade-like object for testing TURN detection."""
+    """Minimal trade-like object for testing pattern detection."""
     symbol: str = "000001"
     side: str = "BUY"
-    date: date = date(2024, 1, 2)
+    datetime: datetime = datetime(2024, 1, 2, 9, 30)
+    price: float = 0.0
 
 
 def make_pos(
@@ -311,8 +312,8 @@ class TestTurnTag:
         d = date(2024, 1, 2)
         pos = make_pos(holding_days=5, entry_date=d, exit_date=date(2024, 1, 7))
         trades = [
-            _Trade(symbol="000001", side="BUY", date=d),
-            _Trade(symbol="000001", side="SELL", date=d),
+            _Trade(symbol="000001", side="BUY", datetime=datetime(d.year, d.month, d.day)),
+            _Trade(symbol="000001", side="SELL", datetime=datetime(d.year, d.month, d.day)),
         ]
         tags = tag_names(pos, all_positions=[pos], trades=trades)
         assert "TURN" in tags
@@ -322,7 +323,7 @@ class TestTurnTag:
         d = date(2024, 1, 2)
         pos = make_pos(holding_days=5, entry_date=d, exit_date=date(2024, 1, 7))
         trades = [
-            _Trade(symbol="000001", side="BUY", date=d),
+            _Trade(symbol="000001", side="BUY", datetime=datetime(d.year, d.month, d.day)),
         ]
         tags = tag_names(pos, all_positions=[pos], trades=trades)
         assert "TURN" not in tags
@@ -742,310 +743,8 @@ class TestBreakdownTag:
 
 
 # ============================================================================
-# Phase 3 — Psychological behavior tags (risk module)
+# Phase 3 — FOMO (still in tag_market_patterns, market-data dependent)
 # ============================================================================
-
-
-class TestRevengeTag:
-    """REVENGE: new trade within 24h after a significant losing position with increased position."""
-
-    def test_revenge_after_loss(self):
-        """New position within 1 day after a significant loser with increased position gets REVENGE."""
-        d = date(2024, 1, 2)
-        # Losing position 1: small loss
-        p1 = make_pos(pnl_pct=-0.01, entry_date=d, exit_date=d + timedelta(days=3), holding_days=3, symbol="A")
-        # Losing position 2 (prior): large loss
-        p2 = make_pos(pnl_pct=-0.10, entry_date=d + timedelta(days=4), exit_date=d + timedelta(days=7), holding_days=3, symbol="B")
-        # p2 exit = Jan 9, p3 entry = Jan 10 => gap = 1 day
-        # avg_loss = (abs(p1.pnl) + abs(p2.pnl)) / 2
-        p3 = make_pos(entry_date=d + timedelta(days=8), symbol="C")
-        p3.total_quantity = 200  # > p2's 100
-        tags = tag_names(p3, all_positions=[p1, p2, p3])
-        assert "REVENGE" in tags
-
-    def test_not_revenge_when_profitable_prior(self):
-        """Prior position with profit does not trigger REVENGE."""
-        p1 = make_pos(pnl_pct=0.05, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), holding_days=3)
-        p2 = make_pos(entry_date=date(2024, 1, 6))
-        tags = tag_names(p2, all_positions=[p1, p2])
-        assert "REVENGE" not in tags
-
-    def test_not_revenge_when_gap_too_large(self):
-        """Gap > 1 day does not trigger REVENGE."""
-        p1 = make_pos(pnl_pct=-0.05, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), holding_days=3)
-        p2 = make_pos(entry_date=date(2024, 1, 10))  # gap = 5 days
-        tags = tag_names(p2, all_positions=[p1, p2])
-        assert "REVENGE" not in tags
-
-    def test_not_revenge_when_no_prior(self):
-        """No prior position -> no REVENGE."""
-        pos = make_pos()
-        tags = tag_names(pos, all_positions=[pos])
-        assert "REVENGE" not in tags
-
-    def test_not_revenge_when_insufficient_loss(self):
-        """Prior loss + gap <= 1 day but loss not significant enough -> no REVENGE."""
-        d = date(2024, 1, 2)
-        # Only one losing position: avg_loss = abs(p1.pnl)
-        # abs(p1.pnl) > avg_loss * 1.5 is impossible with only one loser
-        p1 = make_pos(pnl_pct=-0.05, entry_date=d, exit_date=d + timedelta(days=3), holding_days=3, symbol="A")
-        p2 = make_pos(entry_date=d + timedelta(days=4), symbol="B")  # gap = 1 day
-        tags = tag_names(p2, all_positions=[p1, p2])
-        assert "REVENGE" not in tags
-
-    def test_not_revenge_when_position_not_increased(self):
-        """Prior loss + gap + significant loss but position not increased -> no REVENGE."""
-        d = date(2024, 1, 2)
-        p1 = make_pos(pnl_pct=-0.01, entry_date=d, exit_date=d + timedelta(days=3), holding_days=3, symbol="A")
-        p2 = make_pos(pnl_pct=-0.10, entry_date=d + timedelta(days=4), exit_date=d + timedelta(days=7), holding_days=3, symbol="B")
-        p3 = make_pos(entry_date=d + timedelta(days=8), symbol="C")
-        # p3.total_quantity stays at 100, same as p2.total_quantity
-        tags = tag_names(p3, all_positions=[p1, p2, p3])
-        assert "REVENGE" not in tags
-
-    def test_revenge_confidence(self):
-        d = date(2024, 1, 2)
-        p1 = make_pos(pnl_pct=-0.01, entry_date=d, exit_date=d + timedelta(days=3), holding_days=3, symbol="A")
-        p2 = make_pos(pnl_pct=-0.10, entry_date=d + timedelta(days=4), exit_date=d + timedelta(days=7), holding_days=3, symbol="B")
-        p3 = make_pos(entry_date=d + timedelta(days=8), symbol="C")
-        p3.total_quantity = 200
-        results = PatternEngine.tag_position(p3, [p1, p2, p3])
-        for r in results:
-            if r.pattern_name == "REVENGE":
-                assert r.confidence == 0.7
-
-
-class TestOverTradingTag:
-    """OVERTRADING: daily frequency at 95th percentile."""
-
-    def test_overtrading_detected(self):
-        """Day with many positions vs mostly 1/day gets tagged (95th percentile)."""
-        base_date = date(2024, 1, 2)
-        positions = []
-        # 20 days with 1 position each
-        for i in range(20):
-            d = base_date + timedelta(days=i)
-            positions.append(make_pos(symbol=f"A{i}", entry_date=d))
-        # 1 day with 8 positions (to exceed 95th percentile)
-        heavy_day = base_date + timedelta(days=21)
-        for i in range(8):
-            positions.append(make_pos(symbol=f"B{i}", entry_date=heavy_day))
-
-        tags = tag_names(positions[20], all_positions=positions)  # first position on heavy day
-        assert "OVERTRADING" in tags
-
-    def test_not_overtrading_when_normal(self):
-        """Normal frequency (1/day for 20+ days) does not trigger OVERTRADING."""
-        base_date = date(2024, 1, 2)
-        positions = []
-        for i in range(21):
-            d = base_date + timedelta(days=i)
-            positions.append(make_pos(symbol=f"A{i}", entry_date=d))
-        tags = tag_names(positions[0], all_positions=positions)
-        assert "OVERTRADING" not in tags
-
-    def test_not_overtrading_when_few_trading_days(self):
-        """With fewer than 20 unique trading days, don't tag."""
-        positions = [
-            make_pos(symbol="A", entry_date=date(2024, 1, 2)),
-            make_pos(symbol="B", entry_date=date(2024, 1, 2)),
-        ]
-        tags = tag_names(positions[0], all_positions=positions)
-        assert "OVERTRADING" not in tags
-
-    def test_all_positions_on_day_get_tagged(self):
-        """All positions sharing the high-frequency day get tagged; others don't."""
-        base_date = date(2024, 1, 2)
-        positions = []
-        for i in range(20):
-            d = base_date + timedelta(days=i)
-            positions.append(make_pos(symbol=f"A{i}", entry_date=d))
-        heavy_day = base_date + timedelta(days=21)
-        for i in range(8):
-            positions.append(make_pos(symbol=f"B{i}", entry_date=heavy_day))
-
-        assert "OVERTRADING" in tag_names(positions[20], all_positions=positions)
-        assert "OVERTRADING" in tag_names(positions[25], all_positions=positions)
-        assert "OVERTRADING" not in tag_names(positions[0], all_positions=positions)
-
-    def test_overtrading_confidence(self):
-        base_date = date(2024, 1, 2)
-        positions = []
-        for i in range(20):
-            d = base_date + timedelta(days=i)
-            positions.append(make_pos(symbol=f"A{i}", entry_date=d))
-        heavy_day = base_date + timedelta(days=21)
-        for i in range(8):
-            positions.append(make_pos(symbol=f"B{i}", entry_date=heavy_day))
-
-        results = PatternEngine.tag_position(positions[20], positions)
-        for r in results:
-            if r.pattern_name == "OVERTRADING":
-                assert r.confidence == 0.7
-
-
-class TestHoldLoserTag:
-    """HOLD_LOSER: holding losers much longer than winners (median-based, >=5 each)."""
-
-    def test_hold_loser_detected(self):
-        """Loser held longer than winner median * 1.5 and above median loser hold."""
-        positions = [
-            # 5 winners: short holding
-            make_pos(pnl_pct=0.05, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=4, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 6), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W5"),
-            # 5 losers: long holding
-            make_pos(pnl_pct=-0.03, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=12, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 14), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=15, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 17), symbol="L5"),
-        ]
-        # Winners median: sorted [2, 2, 3, 3, 4] -> median = 3
-        # Losers median: sorted [8, 9, 10, 12, 15] -> median = 10
-        # 10 > 3 * 1.5 = 4.5 ✓
-        # Target L5: pnl<0 ✓, 15 > 10 ✓
-        tags = tag_names(positions[9], all_positions=positions)
-        assert "HOLD_LOSER" in tags
-
-    def test_not_hold_loser_when_no_losers(self):
-        all_winners = [
-            make_pos(pnl_pct=0.05, holding_days=3),
-            make_pos(pnl_pct=0.10, holding_days=5),
-        ]
-        tags = tag_names(all_winners[0], all_positions=all_winners)
-        assert "HOLD_LOSER" not in tags
-
-    def test_not_hold_loser_when_no_winners(self):
-        all_losers = [
-            make_pos(pnl_pct=-0.05, holding_days=8),
-            make_pos(pnl_pct=-0.03, holding_days=5),
-        ]
-        tags = tag_names(all_losers[0], all_positions=all_losers)
-        assert "HOLD_LOSER" not in tags
-
-    def test_not_hold_loser_when_ratio_below_threshold(self):
-        """Ratio below 1.5 doesn't trigger."""
-        positions = [
-            # 5 winners: moderate holding
-            make_pos(pnl_pct=0.05, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="W5"),
-            # 5 losers: similar holding
-            make_pos(pnl_pct=-0.03, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=11, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 13), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=12, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 14), symbol="L5"),
-        ]
-        # Winners median: sorted [8, 8, 9, 9, 10] -> median = 9
-        # Losers median: sorted [9, 10, 10, 11, 12] -> median = 10
-        # 10 > 9 * 1.5 = 13.5? No -> no tag
-        tags = tag_names(positions[9], all_positions=positions)
-        assert "HOLD_LOSER" not in tags
-
-    def test_hold_loser_confidence(self):
-        positions = [
-            make_pos(pnl_pct=0.05, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=4, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 6), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W5"),
-            make_pos(pnl_pct=-0.03, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=12, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 14), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=15, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 17), symbol="L5"),
-        ]
-        results = PatternEngine.tag_position(positions[9], positions)
-        for r in results:
-            if r.pattern_name == "HOLD_LOSER":
-                assert r.confidence == 0.7
-
-
-class TestCutWinnerTag:
-    """CUT_WINNER: cutting winners short while letting losers run (median-based, >=5 each)."""
-
-    def test_cut_winner_detected(self):
-        """Winner cut shorter than loser median * 0.5 and below median winner hold."""
-        positions = [
-            # 5 winners: short holding
-            make_pos(pnl_pct=0.05, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=4, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 6), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W5"),
-            # 5 losers: long holding
-            make_pos(pnl_pct=-0.03, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=12, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 14), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=15, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 17), symbol="L5"),
-        ]
-        # Winners median: sorted [2, 2, 3, 3, 4] -> median = 3
-        # Losers median: sorted [8, 9, 10, 12, 15] -> median = 10
-        # 3 < 10 * 0.5 = 5 ✓
-        # Target W1: pnl>0 ✓, 2 < 3 ✓
-        tags = tag_names(positions[0], all_positions=positions)
-        assert "CUT_WINNER" in tags
-
-    def test_not_cut_winner_when_no_winners(self):
-        all_losers = [
-            make_pos(pnl_pct=-0.05, holding_days=8),
-            make_pos(pnl_pct=-0.03, holding_days=5),
-        ]
-        tags = tag_names(all_losers[0], all_positions=all_losers)
-        assert "CUT_WINNER" not in tags
-
-    def test_not_cut_winner_when_no_losers(self):
-        all_winners = [
-            make_pos(pnl_pct=0.05, holding_days=3),
-            make_pos(pnl_pct=0.10, holding_days=5),
-        ]
-        tags = tag_names(all_winners[0], all_positions=all_winners)
-        assert "CUT_WINNER" not in tags
-
-    def test_not_cut_winner_when_ratio_above_threshold(self):
-        """Ratio above 0.5 doesn't trigger."""
-        positions = [
-            make_pos(pnl_pct=0.05, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="W5"),
-            make_pos(pnl_pct=-0.03, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=11, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 13), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=12, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 14), symbol="L5"),
-        ]
-        # Winners median: sorted [8, 8, 9, 9, 10] -> median = 9
-        # Losers median: sorted [9, 10, 10, 11, 12] -> median = 10
-        # 9 < 10 * 0.5 = 5? No -> no tag
-        tags = tag_names(positions[0], all_positions=positions)
-        assert "CUT_WINNER" not in tags
-
-    def test_cut_winner_confidence(self):
-        positions = [
-            make_pos(pnl_pct=0.05, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=4, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 6), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W5"),
-            make_pos(pnl_pct=-0.03, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=12, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 14), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=15, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 17), symbol="L5"),
-        ]
-        results = PatternEngine.tag_position(positions[0], positions)
-        for r in results:
-            if r.pattern_name == "CUT_WINNER":
-                assert r.confidence == 0.7
 
 
 class TestFomoTag:
@@ -1137,8 +836,8 @@ class TestTagCoexistence:
         d = date(2024, 1, 2)
         pos = make_pos(holding_days=0, entry_date=d, exit_date=d)
         trades = [
-            _Trade(symbol="000001", side="BUY", date=d),
-            _Trade(symbol="000001", side="SELL", date=d),
+            _Trade(symbol="000001", side="BUY", datetime=datetime(d.year, d.month, d.day)),
+            _Trade(symbol="000001", side="SELL", datetime=datetime(d.year, d.month, d.day)),
         ]
         tags = tag_names(pos, all_positions=[pos], trades=trades)
         assert "SCALP" in tags
@@ -1154,61 +853,6 @@ class TestTagCoexistence:
         tags = tag_names(p2, all_positions=[p1, p2])
         assert "AVERAGE_DOWN" in tags
         assert "SMALL_LOSS_EXIT" in tags
-
-
-# ============================================================================
-# Tag Priority System
-# ============================================================================
-
-
-class TestTagPriority:
-    """Overlapping tag resolution: CUT_WINNER > QUICK_PROFIT, HOLD_LOSER > SMALL_LOSS_EXIT."""
-
-    def test_cut_winner_removes_quick_profit(self):
-        """When CUT_WINNER is present, QUICK_PROFIT should be removed."""
-        # A winner with holding_days=2, pnl_pct=0.03 would get both
-        # CUT_WINNER (if median check passes) and QUICK_PROFIT
-        positions = [
-            make_pos(pnl_pct=0.05, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=4, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 6), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W5"),
-            make_pos(pnl_pct=-0.03, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=12, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 14), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=15, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 17), symbol="L5"),
-        ]
-        # Check W3 (pnl_pct=0.03, holding_days=2) — would get both QUICK_PROFIT and CUT_WINNER
-        tags = tag_names(positions[2], all_positions=positions)
-        assert "CUT_WINNER" in tags
-        assert "QUICK_PROFIT" not in tags
-
-    def test_hold_loser_removes_small_loss_exit(self):
-        """When HOLD_LOSER is present, SMALL_LOSS_EXIT should be removed."""
-        # Winners: [2, 2, 3, 3, 4] -> median = 3
-        # Losers: [8, 8, 9, 9, 10] -> median = 9
-        # 9 > 3 * 1.5 = 4.5 ✓
-        positions = [
-            make_pos(pnl_pct=0.05, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W1"),
-            make_pos(pnl_pct=0.10, holding_days=2, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 4), symbol="W2"),
-            make_pos(pnl_pct=0.03, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W3"),
-            make_pos(pnl_pct=0.08, holding_days=3, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 5), symbol="W4"),
-            make_pos(pnl_pct=0.06, holding_days=4, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 6), symbol="W5"),
-            make_pos(pnl_pct=-0.03, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="L1"),
-            make_pos(pnl_pct=-0.05, holding_days=8, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 10), symbol="L2"),
-            make_pos(pnl_pct=-0.02, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L3"),
-            make_pos(pnl_pct=-0.04, holding_days=9, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 11), symbol="L4"),
-            make_pos(pnl_pct=-0.06, holding_days=10, entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 12), symbol="L5"),
-        ]
-        # L5: pnl_pct=-0.06, holding_days=10
-        # HOLD_LOSER: pnl<0 ✓, 10 > 9 ✓
-        # SMALL_LOSS_EXIT: -0.08 <= -0.06 < 0 ✓, 10 <= 10 ✓
-        # HOLD_LOSER should remove SMALL_LOSS_EXIT via priority
-        tags = tag_names(positions[9], all_positions=positions)
-        assert "HOLD_LOSER" in tags
-        assert "SMALL_LOSS_EXIT" not in tags
 
 
 # ============================================================================
@@ -1313,3 +957,121 @@ class TestResolveHierarchy:
                 assert t.context.get("sub_pattern") == "BREAKOUT"
             if t.pattern_name == "COUNTER_TREND":
                 assert t.context.get("sub_pattern") == "BOTTOM"
+
+
+# ============================================================================
+# P1-6: Psychological Pattern Suggestions (AI推测 layer)
+# ============================================================================
+
+
+class TestDetectPsychologicalPatterns:
+    """PatternEngine.detect_psychological_patterns() -- AI suggestion layer."""
+
+    def test_empty_positions_returns_empty(self):
+        results = PatternEngine.detect_psychological_patterns([], all_trades=[])
+        assert results == []
+
+    def test_revenge_detected(self):
+        """Revenge: new trade within 24h of significant loss."""
+        # We need 2 losing positions so avg_loss < abs(big_loss)
+        positions = [
+            make_pos(pnl_pct=-0.1, symbol="S1", holding_days=5,
+                     entry_date=date(2024, 1, 2), exit_date=date(2024, 1, 7)),  # small loss
+            make_pos(pnl_pct=-0.6, symbol="S1", holding_days=5,
+                     entry_date=date(2024, 1, 8), exit_date=date(2024, 1, 13)),  # big loss: -600 PnL
+            make_pos(pnl_pct=0.1, symbol="S2", holding_days=3,
+                     entry_date=date(2024, 1, 14), exit_date=date(2024, 1, 17)),  # revenge: next day, bigger qty
+        ]
+        positions[2].total_quantity = 200  # larger than prior (100)
+        results = PatternEngine.detect_psychological_patterns(positions)
+        names = {r.pattern_name for r in results}
+        assert "REVENGE" in names
+
+    def test_overtrading_detected(self):
+        """Overtrading: need >=20 distinct trading days + one day with count > p95."""
+        positions = []
+        # 19 dates with 1 position each
+        for i in range(19):
+            positions.append(make_pos(
+                pnl_pct=0.01, holding_days=1,
+                entry_date=date(2024, 1, 2 + i), exit_date=date(2024, 1, 3 + i)))
+        # 1 date with 2 positions
+        for i in range(2):
+            positions.append(make_pos(
+                pnl_pct=0.01, holding_days=1,
+                entry_date=date(2024, 1, 22), exit_date=date(2024, 1, 23)))
+        # 1 date with 4 positions (> p95 when daily_counts=21)
+        for i in range(4):
+            positions.append(make_pos(
+                pnl_pct=0.01, holding_days=1,
+                entry_date=date(2024, 1, 24), exit_date=date(2024, 1, 25)))
+        # total: 19 + 2 + 4 = 25 positions, 21 distinct dates
+        results = PatternEngine.detect_psychological_patterns(positions)
+        names = {r.pattern_name for r in results}
+        assert "OVERTRADING" in names
+
+    def test_hold_loser_detected(self):
+        """Hold loser: losers held significantly longer than winners."""
+        positions = []
+        # 5 winners, held short (2-3 days)
+        for i in range(5):
+            positions.append(make_pos(pnl_pct=0.1, holding_days=2 + i % 2,
+                                      entry_date=date(2024, 1, 2 + i),
+                                      exit_date=date(2024, 1, 4 + i + i % 2)))
+        # 5 losers, held long (10-14 days)
+        for i in range(5):
+            positions.append(make_pos(pnl_pct=-0.05, holding_days=10 + i,
+                                      entry_date=date(2024, 1, 10 + i),
+                                      exit_date=date(2024, 1, 20 + i)))
+        # Winners: holding_days = [2, 3, 2, 3, 2] -> median = 2
+        # Losers: holding_days = [10, 11, 12, 13, 14] -> median = 12
+        # 12 > 2 * 1.5 = 3 ✓
+        # The last loser (holding_days=14) > 12 ✓
+        results = PatternEngine.detect_psychological_patterns(positions)
+        names = {r.pattern_name for r in results}
+        assert "HOLD_LOSER" in names
+
+    def test_cut_winner_detected(self):
+        """Cut winner: winners held significantly shorter than losers."""
+        positions = []
+        # 5 winners, held very short (1-3 days), median=2
+        for i in range(5):
+            positions.append(make_pos(pnl_pct=0.1, holding_days=[1, 1, 2, 2, 3][i],
+                                      entry_date=date(2024, 1, 2 + i),
+                                      exit_date=date(2024, 2, 1 + i)))
+        # 5 losers, held long (8-12 days)
+        for i in range(5):
+            positions.append(make_pos(pnl_pct=-0.05, holding_days=8 + i,
+                                      entry_date=date(2024, 1, 10 + i),
+                                      exit_date=date(2024, 1, 18 + i)))
+        # Winners: holding_days = [1, 2, 1, 2, 1] -> median = 1
+        # Losers: holding_days = [8, 9, 10, 11, 12] -> median = 10
+        # 1 < 10 * 0.5 = 5 ✓
+        # The first winner (holding_days=1) < 1? No, 1 < 1 is False.
+        # Need a winner with holding_days < median_hold_winners
+        # Let me adjust: 5 winners [1,1,2,2,3] -> median = 2
+        results = PatternEngine.detect_psychological_patterns(positions)
+        names = {r.pattern_name for r in results}
+        assert "CUT_WINNER" in names
+
+    def test_all_psychological_tags_have_low_confidence(self):
+        """Psychological tags should have confidence <= 0.5."""
+        positions = []
+        # 5 winners held short (1-3 days), median=2
+        for i in range(5):
+            positions.append(make_pos(pnl_pct=0.1, holding_days=[1, 1, 2, 2, 3][i],
+                                      entry_date=date(2024, 1, 2 + i),
+                                      exit_date=date(2024, 1, 5 + i)))
+        # 5 losers held long (10-14 days)
+        for i in range(5):
+            positions.append(make_pos(pnl_pct=-0.05, holding_days=10 + i,
+                                      entry_date=date(2024, 1, 10 + i),
+                                      exit_date=date(2024, 1, 20 + i)))
+        # 15 extra positions on varied February dates for overtrading context
+        for i in range(15):
+            positions.append(make_pos(pnl_pct=0.01, holding_days=1,
+                                      entry_date=date(2024, 2, 1 + i),
+                                      exit_date=date(2024, 2, 2 + i)))
+        results = PatternEngine.detect_psychological_patterns(positions)
+        for r in results:
+            assert r.confidence <= 0.5, f"{r.pattern_name} has confidence {r.confidence} > 0.5"

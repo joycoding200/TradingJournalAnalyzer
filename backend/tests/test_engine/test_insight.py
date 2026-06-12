@@ -102,9 +102,9 @@ class TestInsightEngineMultiple:
 
 
 class TestInsightEngineSorting:
-    """Results must be sorted by expectancy descending."""
+    """Results must be sorted by total_pnl descending."""
 
-    def test_sorted_by_expectancy_desc(self):
+    def test_sorted_by_total_pnl_desc(self):
         positions = [
             make_pos(pnl=100.0, pnl_pct=0.1),
             make_pos(pnl=200.0, pnl_pct=0.2),
@@ -112,21 +112,21 @@ class TestInsightEngineSorting:
         ]
         patterns_map = {0: ["A"], 1: ["B"], 2: ["C"]}
         results = InsightEngine.analyze(positions, patterns_map)
-        expectancies = [r.expectancy for r in results]
-        assert expectancies == sorted(expectancies, reverse=True)
+        total_pnls = [r.total_pnl for r in results]
+        assert total_pnls == sorted(total_pnls, reverse=True)
 
-    def test_negative_expectancy_sorted_last(self):
-        """Pattern with negative expectancy should sort below positive ones."""
+    def test_negative_total_pnl_sorted_last(self):
+        """Pattern with negative total_pnl should sort below positive ones."""
         positions = [
-            make_pos(pnl=200.0, pnl_pct=0.2),   # A: win, expectancy=200
-            make_pos(pnl=-500.0, pnl_pct=-0.5),  # B: loss, expectancy=-500
-            make_pos(pnl=50.0, pnl_pct=0.05),    # C: win, expectancy=50
+            make_pos(pnl=200.0, pnl_pct=0.2),   # A: total_pnl=200
+            make_pos(pnl=-500.0, pnl_pct=-0.5),  # B: total_pnl=-500
+            make_pos(pnl=50.0, pnl_pct=0.05),    # C: total_pnl=50
         ]
         patterns_map = {0: ["A"], 1: ["B"], 2: ["C"]}
         results = InsightEngine.analyze(positions, patterns_map)
-        # B has negative expectancy, should be last
+        # B has negative total_pnl, should be last
         assert results[-1].pattern_name == "B"
-        assert results[-1].expectancy < 0
+        assert results[-1].total_pnl < 0
 
 
 class TestInsightEngineEdgeCases:

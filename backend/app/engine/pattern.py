@@ -38,7 +38,8 @@ class PatternEngine:
             pos: A position-like object with holding_days, pnl_pct,
                 symbol, entry_date, exit_date, avg_entry_price.
             all_positions: All positions in the analysis period.
-            **kwargs: Reserved for future extension.
+            **kwargs: Supports 'trades' (raw trade list) and
+                'all_trades' (all raw trades for trade-level analysis).
 
         Returns:
             List of PatternResult instances.
@@ -72,40 +73,90 @@ class PatternEngine:
             )
 
         # ----- Module 3: Risk & position management ---------------------
-        # PYRAMID / AVERAGE_DOWN -- compare against first position of same symbol
+        # Trades for analysis (passed via kwargs)
+        all_trades = kwargs.get("all_trades")
+
+        # PYRAMID / AVERAGE_DOWN
         same_symbol_positions = [
             p for p in all_positions if p.symbol == pos.symbol
         ]
         same_symbol_positions.sort(key=lambda p: p.entry_date)
+
         if len(same_symbol_positions) > 1:
             first = same_symbol_positions[0]
-            # PYRAMID: adding at a HIGHER price with time separation >= 1 day
-            if pos.avg_entry_price > first.avg_entry_price * 1.02:
-                days_gap = (pos.entry_date - first.entry_date).days
-                if days_gap >= 1:
+
+            if all_trades is not None:
+                # P0-3/P0-4: Trade-level price comparison
+                same_symbol_trades = [
+                    t for t in all_trades
+                    if t.symbol == pos.symbol and t.side == "BUY"
+                ]
+                same_symbol_trades.sort(key=lambda t: t.datetime)
+                if len(same_symbol_trades) >= 2:
+                    first_buy_price = same_symbol_trades[0].price
+                    last_buy_price = same_symbol_trades[-1].price
+                    last_buy_date = same_symbol_trades[-1].datetime.date()
+
+                    # PYRAMID: higher price while still holding
+                    if last_buy_price > first_buy_price * 1.02:
+                        # Check if there was an open position when this buy happened
+                        for prev_pos in all_positions:
+                            if (prev_pos.symbol == pos.symbol
+                                    and prev_pos.entry_date <= last_buy_date <= prev_pos.exit_date):
+                                tags.append(
+                                    PatternResult(
+                                        "PYRAMID",
+                                        0.8,
+                                        {
+                                            "last_buy_price": last_buy_price,
+                                            "first_buy_price": first_buy_price,
+                                            "buy_date": str(last_buy_date),
+                                        },
+                                    )
+                                )
+                                break
+
+                    # AVERAGE_DOWN: second buy at significantly lower price
+                    if last_buy_price < first_buy_price * 0.95:
+                        tags.append(
+                            PatternResult(
+                                "AVERAGE_DOWN",
+                                0.8,
+                                {
+                                    "last_buy_price": last_buy_price,
+                                    "first_buy_price": first_buy_price,
+                                },
+                            )
+                        )
+            else:
+                # Fallback: Position-level comparison (backward compatible)
+                # PYRAMID: adding at a HIGHER price with time separation >= 1 day
+                if pos.avg_entry_price > first.avg_entry_price * 1.02:
+                    days_gap = (pos.entry_date - first.entry_date).days
+                    if days_gap >= 1:
+                        tags.append(
+                            PatternResult(
+                                "PYRAMID",
+                                0.8,
+                                {
+                                    "avg_entry": pos.avg_entry_price,
+                                    "first_entry_avg": first.avg_entry_price,
+                                    "days_gap": days_gap,
+                                },
+                            )
+                        )
+                # AVERAGE_DOWN: adding at a significantly LOWER price (>= 5%)
+                if pos.avg_entry_price < first.avg_entry_price * 0.95:
                     tags.append(
                         PatternResult(
-                            "PYRAMID",
+                            "AVERAGE_DOWN",
                             0.8,
                             {
                                 "avg_entry": pos.avg_entry_price,
                                 "first_entry_avg": first.avg_entry_price,
-                                "days_gap": days_gap,
                             },
                         )
                     )
-            # AVERAGE_DOWN: adding at a significantly LOWER price (>= 5%)
-            if pos.avg_entry_price < first.avg_entry_price * 0.95:
-                tags.append(
-                    PatternResult(
-                        "AVERAGE_DOWN",
-                        0.8,
-                        {
-                            "avg_entry": pos.avg_entry_price,
-                            "first_entry_avg": first.avg_entry_price,
-                        },
-                    )
-                )
 
         # TURN -- intraday round trip (做T)
         trades = kwargs.get("trades")
@@ -117,9 +168,9 @@ class PatternEngine:
             sell_dates: set = set()
             for t in same_symbol_trades:
                 if t.side.upper() == "BUY":
-                    buy_dates.add(t.date)
+                    buy_dates.add(t.datetime.date())  # P0-2: fix t.date -> t.datetime.date()
                 elif t.side.upper() == "SELL":
-                    sell_dates.add(t.date)
+                    sell_dates.add(t.datetime.date())  # P0-2: fix t.date -> t.datetime.date()
             dates_with_both = buy_dates & sell_dates
             if dates_with_both:
                 tags.append(
@@ -175,90 +226,8 @@ class PatternEngine:
                     )
                 )
 
-        # ----- Phase 3: Psychological behavior tags -----------------------
-        # REVENGE: new trade within 24h of a significant loss with increased position
-        prior_positions = sorted(
-            [p for p in all_positions if p.exit_date < pos.entry_date],
-            key=lambda p: p.exit_date,
-        )
-        if prior_positions:
-            last_prior = prior_positions[-1]
-            if last_prior.pnl < 0 and (pos.entry_date - last_prior.exit_date).days <= 1:
-                # Additional conditions: significant loss + increased position
-                losing_positions = [p for p in all_positions if p.pnl < 0]
-                if losing_positions:
-                    avg_loss = sum(abs(p.pnl) for p in losing_positions) / len(losing_positions)
-                    if abs(last_prior.pnl) > avg_loss * 1.5 and pos.total_quantity > last_prior.total_quantity:
-                        tags.append(
-                            PatternResult(
-                                "REVENGE",
-                                0.7,
-                                {
-                                    "prior_pnl": last_prior.pnl,
-                                    "prior_exit": str(last_prior.exit_date),
-                                    "gap_days": (pos.entry_date - last_prior.exit_date).days,
-                                },
-                            )
-                        )
-
-        # OVERTRADING: daily frequency > 95th percentile (need >= 20 trading days)
-        date_counts = Counter(p.entry_date for p in all_positions)
-        daily_counts = list(date_counts.values())
-        if len(daily_counts) >= 20:
-            p95 = sorted(daily_counts)[int(len(daily_counts) * 0.95)]
-            if date_counts[pos.entry_date] > p95:
-                tags.append(
-                    PatternResult(
-                        "OVERTRADING",
-                        0.7,
-                        {
-                            "positions_today": date_counts[pos.entry_date],
-                            "total_positions": len(all_positions),
-                            "trading_days": len(daily_counts),
-                            "p95_threshold": p95,
-                        },
-                    )
-                )
-
-        # HOLD_LOSER / CUT_WINNER: compare holding durations using median
-        winners = [p for p in all_positions if p.pnl > 0]
-        losers = [p for p in all_positions if p.pnl < 0]
-        if len(winners) >= 5 and len(losers) >= 5:
-            median_hold_winners = median(p.holding_days for p in winners)
-            median_hold_losers = median(p.holding_days for p in losers)
-
-            if median_hold_losers > median_hold_winners * 1.5 and pos.pnl < 0 and pos.holding_days > median_hold_losers:
-                tags.append(
-                    PatternResult(
-                        "HOLD_LOSER",
-                        0.7,
-                        {
-                            "holding_days": pos.holding_days,
-                            "median_holding_winners": median_hold_winners,
-                            "median_holding_losers": median_hold_losers,
-                        },
-                    )
-                )
-
-            if median_hold_winners < median_hold_losers * 0.5 and pos.pnl > 0 and pos.holding_days < median_hold_winners:
-                tags.append(
-                    PatternResult(
-                        "CUT_WINNER",
-                        0.7,
-                        {
-                            "holding_days": pos.holding_days,
-                            "median_holding_winners": median_hold_winners,
-                            "median_holding_losers": median_hold_losers,
-                        },
-                    )
-                )
-
         # ----- Priority resolution for overlapping tags -------------------
         tag_names = {t.pattern_name for t in tags}
-        if "CUT_WINNER" in tag_names:
-            tags = [t for t in tags if t.pattern_name != "QUICK_PROFIT"]
-        if "HOLD_LOSER" in tag_names:
-            tags = [t for t in tags if t.pattern_name not in ("SMALL_LOSS_EXIT", "STOP_LOSS")]
 
         return tags
 
@@ -532,6 +501,140 @@ class PatternEngine:
                     t.context["sub_pattern"] = "BREAKDOWN"
 
         return tags
+
+    # ------------------------------------------------------------------
+    # P1-6: Psychological pattern suggestions (AI推测 layer)
+    # These are suggestions, not hard behavioral tags. They indicate
+    # potential psychological patterns for the AI layer to analyze.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def detect_psychological_patterns(
+        positions: list,
+        all_trades: list | None = None,
+    ) -> list[PatternResult]:
+        """Detect potential psychological patterns as AI推测 suggestions.
+
+        Unlike tag_position() which produces observable behavior tags,
+        these are inferences about trader psychology. They should be
+        presented as suggestions, not definitive labels.
+
+        Args:
+            positions: All positions in the analysis period.
+            all_trades: Raw trade records (optional, enhances detection).
+
+        Returns:
+            List of PatternResult instances for psychological patterns.
+        """
+        results: list[PatternResult] = []
+
+        if not positions:
+            return results
+
+        # --- REVENGE: new trade within 24h of significant loss ---
+        for pos in positions:
+            prior_positions = sorted(
+                [p for p in positions if p.exit_date < pos.entry_date],
+                key=lambda p: p.exit_date,
+            )
+            if prior_positions:
+                last_prior = prior_positions[-1]
+                if last_prior.pnl < 0 and (pos.entry_date - last_prior.exit_date).days <= 1:
+                    losing_positions = [p for p in positions if p.pnl < 0]
+                    if losing_positions:
+                        avg_loss = sum(abs(p.pnl) for p in losing_positions) / len(losing_positions)
+                        if abs(last_prior.pnl) > avg_loss * 1.5 and pos.total_quantity > last_prior.total_quantity:
+                            results.append(
+                                PatternResult(
+                                    "REVENGE",
+                                    0.5,  # lower confidence for AI suggestion
+                                    {
+                                        "prior_pnl": last_prior.pnl,
+                                        "prior_exit": str(last_prior.exit_date),
+                                        "gap_days": (pos.entry_date - last_prior.exit_date).days,
+                                    },
+                                )
+                            )
+
+        # --- OVERTRADING: daily frequency > 95th percentile ---
+        if len(positions) >= 20:
+            date_counts = Counter(p.entry_date for p in positions)
+            daily_counts = list(date_counts.values())
+            if len(daily_counts) >= 20:
+                p95 = sorted(daily_counts)[int(len(daily_counts) * 0.95)]
+                for pos in positions:
+                    if date_counts[pos.entry_date] > p95:
+                        results.append(
+                            PatternResult(
+                                "OVERTRADING",
+                                0.5,
+                                {
+                                    "positions_today": date_counts[pos.entry_date],
+                                    "total_positions": len(positions),
+                                    "trading_days": len(daily_counts),
+                                    "p95_threshold": p95,
+                                },
+                            )
+                        )
+
+        # --- HOLD_LOSER / CUT_WINNER: median holding duration comparison ---
+        winners = [p for p in positions if p.pnl > 0]
+        losers = [p for p in positions if p.pnl < 0]
+        if len(winners) >= 5 and len(losers) >= 5:
+            median_hold_winners = median(p.holding_days for p in winners)
+            median_hold_losers = median(p.holding_days for p in losers)
+
+            for pos in positions:
+                if median_hold_losers > median_hold_winners * 1.5 and pos.pnl < 0 and pos.holding_days > median_hold_losers:
+                    results.append(
+                        PatternResult(
+                            "HOLD_LOSER",
+                            0.5,
+                            {
+                                "holding_days": pos.holding_days,
+                                "median_holding_winners": median_hold_winners,
+                                "median_holding_losers": median_hold_losers,
+                            },
+                        )
+                    )
+
+                if median_hold_winners < median_hold_losers * 0.5 and pos.pnl > 0 and pos.holding_days < median_hold_winners:
+                    results.append(
+                        PatternResult(
+                            "CUT_WINNER",
+                            0.5,
+                            {
+                                "holding_days": pos.holding_days,
+                                "median_holding_winners": median_hold_winners,
+                                "median_holding_losers": median_hold_losers,
+                            },
+                        )
+                    )
+
+        # --- FOMO (simplified, trade-based only) ---
+        if all_trades is not None and len(all_trades) >= 10:
+            for pos in positions:
+                symbol_trades = sorted(
+                    [t for t in all_trades if t.symbol == pos.symbol],
+                    key=lambda t: t.datetime,
+                )
+                if len(symbol_trades) >= 5:
+                    entry_trades = [t for t in symbol_trades if t.side == "BUY" and t.datetime.date() <= pos.entry_date]
+                    if len(entry_trades) >= 3:
+                        prices = [t.price for t in entry_trades[-3:]]
+                        if all(prices[i] < prices[i + 1] for i in range(len(prices) - 1)):
+                            results.append(
+                                PatternResult(
+                                    "FOMO",
+                                    0.4,
+                                    {
+                                        "consecutive_buy_price_increase": True,
+                                        "recent_prices": prices,
+                                    },
+                                )
+                            )
+
+        return results
 
 
 # -- helpers ----------------------------------------------------------------

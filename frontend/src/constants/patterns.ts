@@ -23,12 +23,8 @@ export const PATTERN_LABELS: Record<string, string> = {
   QUICK_PROFIT: "短线止盈",
   NORMAL_PROFIT: "正常止盈",
   BIG_WIN: "大赚",
-  // Phase 3: 心理行为标签
+  // Phase 3: 心理行为标签（AI推测层）
   FOMO: "害怕错过",
-  REVENGE: "报复交易",
-  OVERTRADING: "过度交易",
-  HOLD_LOSER: "死扛亏损",
-  CUT_WINNER: "过早止盈",
 };
 
 export const PATTERN_MODULES: Record<string, string> = {
@@ -38,8 +34,7 @@ export const PATTERN_MODULES: Record<string, string> = {
   PYRAMID: "risk", AVERAGE_DOWN: "risk", TURN: "risk",
   SMALL_LOSS_EXIT: "risk", QUICK_PROFIT: "risk", NORMAL_PROFIT: "risk",
   BIG_WIN: "risk",
-  FOMO: "risk", REVENGE: "risk", OVERTRADING: "risk",
-  HOLD_LOSER: "risk", CUT_WINNER: "risk",
+  FOMO: "risk",
 };
 
 export function patternLabel(name: string): string {
