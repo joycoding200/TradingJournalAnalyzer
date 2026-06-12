@@ -263,14 +263,18 @@ class SmartParser(BaseParser):
             return best if best_score > 0.3 else None
 
         date_col = best_col("DATE")
-        direction_col = best_col("DIRECTION")
-        price_col = best_col("PRICE")
-        qty_col = best_col("QUANTITY")
 
-        # Symbol: prefer stock, try futures next
+        # Symbol: prefer stock, try futures next — must resolve before price/qty
         stock_col = best_col("STOCK_SYMBOL")
         future_col = best_col("FUTURES_SYMBOL")
         symbol_col = stock_col or future_col
+
+        # Exclude symbol column from price/qty/direction to avoid misclassification
+        _non_symbol = {symbol_col} if symbol_col else set()
+
+        direction_col = best_col("DIRECTION", exclude=_non_symbol)
+        price_col = best_col("PRICE", exclude=_non_symbol)
+        qty_col = best_col("QUANTITY", exclude=_non_symbol)
 
         # Asset type determined by which symbol column scored higher
         stock_score = column_scores.get(stock_col or "", {}).get("STOCK_SYMBOL", 0)
@@ -278,9 +282,13 @@ class SmartParser(BaseParser):
         is_future = future_score > stock_score and future_score > 0.3
 
         # Find ALL commission/fee columns (佣金, 印花税, 过户费, 其他杂费 etc.)
+        # Exclude: price columns (PRICE > COMMISSION) and serial/ID columns (high QUANTITY)
         comm_cols = [
             col for col, scores in column_scores.items()
             if scores.get("COMMISSION", 0) > 0.3
+            and scores.get("PRICE", 0) < scores.get("COMMISSION", 0)
+            and scores.get("QUANTITY", 0) < 0.45  # exclude serial numbers / IDs
+            and not any(kw in str(col).lower() for kw in ["序号", "编号", "成交编号", "委托编号", "合同编号", "股东代码"])
         ]
         margin_col = best_col("MARGIN") if is_future else None
 
