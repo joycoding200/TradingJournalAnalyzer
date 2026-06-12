@@ -119,7 +119,9 @@
       "Bash(.venv/Scripts/python -m pytest --tb=short)",
       "Bash(.venv/Scripts/python -m pytest tests/test_engine/test_pattern.py::TestDetectPsychologicalPatterns --tb=long)",
       "Bash(.venv/Scripts/python -m pytest tests/test_engine/ --tb=short)",
-      "Bash(.venv/Scripts/python -m pytest tests/test_engine/ -q)"
+      "Bash(.venv/Scripts/python -m pytest tests/test_engine/ -q)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_api/test_analysis.py::TestAnalysisInsight::test_insight_best_and_worst_pattern tests/test_api/test_analysis.py::TestAnalysisWhatIf::test_whatif_returns_items -v --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_api/test_analysis.py::TestAnalysisInsight::test_insight_returns_patterns -v --tb=short)"
     ]
   },
   "enableAllProjectMcpServers": true,

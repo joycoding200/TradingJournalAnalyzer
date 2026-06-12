@@ -98,8 +98,8 @@ class PatternEngine:
                     last_buy_price = same_symbol_trades[-1].price
                     last_buy_date = same_symbol_trades[-1].datetime.date()
 
-                    # PYRAMID: higher price while still holding
-                    if last_buy_price > first_buy_price * 1.02:
+                    # PYRAMID: higher price while still holding AND position profitable
+                    if last_buy_price > first_buy_price * 1.02 and pos.pnl > 0:
                         # Check if there was an open position when this buy happened
                         for prev_pos in all_positions:
                             if (prev_pos.symbol == pos.symbol
@@ -259,11 +259,11 @@ class PatternEngine:
                     {"pnl_pct": pos.pnl_pct, "holding_days": pos.holding_days},
                 )
             )
-        # PANIC_EXIT: loss > 20%
+        # LARGE_LOSS_EXIT: loss > 20%
         if pos.pnl_pct < -0.20:
             tags.append(
                 PatternResult(
-                    "PANIC_EXIT",
+                    "LARGE_LOSS_EXIT",
                     0.9,
                     {"pnl_pct": pos.pnl_pct},
                 )

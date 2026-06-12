@@ -1332,27 +1332,27 @@ class TestTimeExitTag:
 
 
 class TestPanicExitTag:
-    """PANIC_EXIT: loss > 20%."""
+    """LARGE_LOSS_EXIT: loss > 20%."""
 
     def test_qualifying_loss_gets_panic_exit(self):
         pos = make_pos(pnl_pct=-0.25, holding_days=5)
-        assert "PANIC_EXIT" in tag_names(pos)
+        assert "LARGE_LOSS_EXIT" in tag_names(pos)
 
     def test_at_boundary(self):
         pos = make_pos(pnl_pct=-0.21, holding_days=3)
-        assert "PANIC_EXIT" in tag_names(pos)
+        assert "LARGE_LOSS_EXIT" in tag_names(pos)
 
     def test_not_when_loss_small(self):
         pos = make_pos(pnl_pct=-0.19, holding_days=5)
-        assert "PANIC_EXIT" not in tag_names(pos)
+        assert "LARGE_LOSS_EXIT" not in tag_names(pos)
 
     def test_not_when_profitable(self):
         pos = make_pos(pnl_pct=0.05, holding_days=5)
-        assert "PANIC_EXIT" not in tag_names(pos)
+        assert "LARGE_LOSS_EXIT" not in tag_names(pos)
 
     def test_confidence(self):
         pos = make_pos(pnl_pct=-0.30, holding_days=5)
         results = PatternEngine.tag_position(pos, [pos])
         for r in results:
-            if r.pattern_name == "PANIC_EXIT":
+            if r.pattern_name == "LARGE_LOSS_EXIT":
                 assert r.confidence == 0.9

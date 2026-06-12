@@ -48,7 +48,7 @@ PATTERN_MODULES: dict[str, str] = {
     "TIGHT_STOP": "exit",
     "TRAILING_STOP": "exit",
     "TIME_EXIT": "exit",
-    "PANIC_EXIT": "exit",
+    "LARGE_LOSS_EXIT": "exit",
     "FOMO": "entry",
     "PSY_FOMO": "risk",
     "POSSIBLE_REVENGE": "risk",
@@ -238,8 +238,9 @@ def get_insight(
     risk_patterns = [p for p in pattern_items if _module_for_pattern(p.pattern_name) == "risk"]
     exit_patterns = [p for p in pattern_items if _module_for_pattern(p.pattern_name) == "exit"]
 
-    best = pattern_items[0] if pattern_items else None
-    worst = pattern_items[-1] if len(pattern_items) > 1 else None
+    significant = [p for p in pattern_items if p.count >= 5]
+    best = significant[0] if significant else None
+    worst = significant[-1] if len(significant) > 1 else None
 
     return InsightResponse(
         patterns=pattern_items,
@@ -263,9 +264,10 @@ def get_whatif(
     trades = _load_trades(analysis, current_user.id, db)
     positions = PositionBuilder.build(trades)
     patterns_map = _build_patterns_map(positions)
-    # Extract just pattern names for ProfitAttribution (which uses list[str])
+    # Use primary pattern per position (same as insight) to avoid double-counting
+    primary_map = InsightEngine._resolve_primary(patterns_map)
     patterns_map_names: dict[int, list[str]] = {
-        i: [name for name, _ in pats] for i, pats in patterns_map.items()
+        i: [p] for i, p in primary_map.items()
     }
     items = ProfitAttribution.attribution_analysis(positions, patterns_map_names)
 

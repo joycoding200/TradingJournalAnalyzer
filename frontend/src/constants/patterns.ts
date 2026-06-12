@@ -27,7 +27,7 @@ export const PATTERN_LABELS: Record<string, string> = {
   TIGHT_STOP: "止损",
   TRAILING_STOP: "移动止损",
   TIME_EXIT: "时间止损",
-  PANIC_EXIT: "恐慌离场",
+  LARGE_LOSS_EXIT: "恐慌离场",
   // 入场行为（行情依赖）
   FOMO: "害怕错过",
   // Phase 4: 心理行为标签（AI推测层）
@@ -45,7 +45,7 @@ export const PATTERN_MODULES: Record<string, string> = {
   PYRAMID: "risk", AVERAGE_DOWN: "risk", TURN: "risk",
   SMALL_LOSS_EXIT: "risk", QUICK_PROFIT: "risk", NORMAL_PROFIT: "risk",
   BIG_WIN: "risk",
-  TIGHT_STOP: "exit", TRAILING_STOP: "exit", TIME_EXIT: "exit", PANIC_EXIT: "exit",
+  TIGHT_STOP: "exit", TRAILING_STOP: "exit", TIME_EXIT: "exit", LARGE_LOSS_EXIT: "exit",
   FOMO: "entry",
   PSY_FOMO: "risk", POSSIBLE_REVENGE: "risk", OVERTRADING: "risk",
   HOLD_LOSER: "risk", CUT_WINNER: "risk",

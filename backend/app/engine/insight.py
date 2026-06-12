@@ -54,7 +54,7 @@ class InsightEngine:
                 pats,
                 key=lambda p: (-p[1], PRIORITY.get(
                     # Derive module from common naming patterns
-                    "exit" if p[0] in ("TIGHT_STOP", "TRAILING_STOP", "TIME_EXIT", "PANIC_EXIT")
+                    "exit" if p[0] in ("TIGHT_STOP", "TRAILING_STOP", "TIME_EXIT", "LARGE_LOSS_EXIT")
                     else "entry" if p[0] in ("CHASE", "BOTTOM", "BREAKOUT", "TREND", "COUNTER_TREND", "BREAKDOWN", "FOMO")
                     else "holding" if p[0] in ("SCALP", "SWING", "POSITION")
                     else "risk",

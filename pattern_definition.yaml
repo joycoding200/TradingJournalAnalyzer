@@ -209,8 +209,8 @@ patterns:
       detail: holding_days > 30 AND abs(pnl_pct) < 0.05
     description: 时间止损，持仓过久后因时间成本离场
 
-  - name: PANIC_EXIT
-    label: 恐慌离场
+  - name: LARGE_LOSS_EXIT
+    label: 大幅亏损离场
     module: exit
     market_dependent: false
     confidence: 0.9
