@@ -8,7 +8,7 @@ interface TradePreviewProps {
   loading?: boolean;
 }
 
-const COLUMNS = ["trade_id", "symbol", "side", "quantity", "price", "commission", "datetime"];
+const COLUMNS = ["编号", "股票代码", "方向", "数量", "价格", "手续费", "时间"];
 
 export default function TradePreview({ trades, onImport, loading }: TradePreviewProps) {
   const display = trades.slice(0, 100);

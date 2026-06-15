@@ -22,7 +22,7 @@ export default function WhatIfChart({ data }: WhatIfChartProps) {
   return (
     <div style={{ backgroundColor: "var(--bg-secondary)", borderRadius: "12px", border: "1px solid var(--border)" }} className="p-4">
       <h3 className="text-sm font-medium mb-4" style={{ color: "var(--text-secondary)" }}>
-        What If 回测对比
+        情景回测对比
       </h3>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data}>

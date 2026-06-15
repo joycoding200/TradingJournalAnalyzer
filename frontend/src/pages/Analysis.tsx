@@ -52,7 +52,7 @@ export default function Analysis() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "stats", label: "统计概览" },
     { key: "insight", label: "归因分析" },
-    { key: "whatif", label: "What If 回测" },
+    { key: "whatif", label: "情景回测（What If）" },
   ];
 
   return (

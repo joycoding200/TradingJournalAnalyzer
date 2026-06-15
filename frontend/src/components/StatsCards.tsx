@@ -146,7 +146,7 @@ export default function StatsCards({ stats }: StatsCardsProps) {
     <div>
       {unknown > 0 && (
         <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.3)", color: "#eab308" }}>
-          ⚠ 检测到 {unknown} 笔卖出对应的买入发生在交割单起始日期之前，持仓成本未知，已标记为 PnL=0。建议导入更早期的交割单以获得完整分析。
+          ⚠ 检测到 {unknown} 笔卖出对应的买入发生在交割单起始日期之前，持仓成本未知，已标记为盈亏=0。建议导入更早期的交割单以获得完整分析。
         </div>
       )}
 
