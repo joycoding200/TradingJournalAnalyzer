@@ -9,10 +9,13 @@ from pydantic import BaseModel
 class AnalysisRunRequest(BaseModel):
     date_start: date
     date_end: date
+    raw_file_id: str = ""
+    filename: str = ""
 
 
 class AnalysisRunResponse(BaseModel):
     analysis_id: str
+    filename: str = ""
 
 
 class PositionItem(BaseModel):
@@ -62,6 +65,7 @@ class StatsResponse(BaseModel):
     total_return_pct: float = 0.0
     avg_win_pct: float = 0.0
     avg_loss_pct: float = 0.0
+    filename: str = ""
     outcome_distribution: list[OutcomeItem] = []
     positions: list[PositionItem]
     # V1.2 MAE/MFE

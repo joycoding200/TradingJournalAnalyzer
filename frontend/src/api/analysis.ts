@@ -1,7 +1,7 @@
 import { apiGet, apiPost } from "./client";
 
-export async function runAnalysis(date_start: string, date_end: string): Promise<any> {
-  return apiPost("/api/analysis/run", { date_start, date_end });
+export async function runAnalysis(date_start: string, date_end: string, raw_file_id = "", filename = ""): Promise<any> {
+  return apiPost("/api/analysis/run", { date_start, date_end, raw_file_id, filename });
 }
 
 export async function getStats(id: string): Promise<any> {

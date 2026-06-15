@@ -15,11 +15,12 @@ export default function Upload() {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [rawFileId, setRawFileId] = useState<string>("");
+  const [fileName, setFileName] = useState<string>("");
   const [formats, setFormats] = useState<FormatOption[]>([]);
   const [parsedData, setParsedData] = useState<Record<string, unknown>[]>([]);
   const navigate = useNavigate();
 
-  const autoProcess = async (fileId: string, sourceType: string) => {
+  const autoProcess = async (fileId: string, sourceType: string, fileName: string) => {
     // Confirm format
     setStatusText("正在解析交易记录...");
     const confirmed = await confirmFormat(fileId, sourceType);
@@ -39,7 +40,7 @@ export default function Upload() {
     const today = new Date().toISOString().split("T")[0];
     const dateStart = dates[0]?.split("T")[0] || "2020-01-01";
     const dateEnd = dates[dates.length - 1]?.split("T")[0] || today;
-    const analysis = await runAnalysis(dateStart, dateEnd);
+    const analysis = await runAnalysis(dateStart, dateEnd, fileId, fileName);
     navigate(`/analysis/${analysis.analysis_id}`);
   };
 
@@ -50,11 +51,12 @@ export default function Upload() {
       const result = await uploadFile(file);
       const detectedFormats = result.detected_formats || [];
       setRawFileId(result.raw_file_id);
+      setFileName(file.name);
       setFormats(detectedFormats);
 
       if (detectedFormats.length > 0 && detectedFormats[0].score >= 0.7) {
         // Auto-process: skip format selection
-        await autoProcess(result.raw_file_id, detectedFormats[0].source_type);
+        await autoProcess(result.raw_file_id, detectedFormats[0].source_type, file.name);
       } else if (detectedFormats.length > 0) {
         // Low confidence: let user pick format
         setLoading(false);
@@ -72,7 +74,7 @@ export default function Upload() {
   const handleConfirm = async (sourceType: string) => {
     setLoading(true);
     try {
-      await autoProcess(rawFileId, sourceType);
+      await autoProcess(rawFileId, sourceType, fileName);
     } catch (err) {
       setLoading(false);
       alert(err instanceof Error ? err.message : "处理失败");

@@ -26,6 +26,8 @@ class ReportResponse(BaseModel):
 
 class ReportListItem(BaseModel):
     id: str
+    analysis_id: str = ""
+    filename: str = ""
     created_at: datetime
 
 

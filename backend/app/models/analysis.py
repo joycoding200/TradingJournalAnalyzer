@@ -14,6 +14,9 @@ class Analysis(Base):
     user_id = Column(
         String(36), ForeignKey("users.id"), nullable=False, index=True
     )
+    raw_file_id = Column(
+        String(36), ForeignKey("raw_files.id"), nullable=True, index=True
+    )
     date_start = Column(Date, nullable=False)
     date_end = Column(Date, nullable=False)
     created_at = Column(

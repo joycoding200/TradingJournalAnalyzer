@@ -74,16 +74,17 @@ def run_analysis(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create an analysis record for the given date range."""
+    """Create an analysis record for the given date range + uploaded file."""
     analysis = Analysis(
         user_id=current_user.id,
         date_start=body.date_start,
         date_end=body.date_end,
+        raw_file_id=body.raw_file_id or None,
     )
     db.add(analysis)
     db.commit()
     db.refresh(analysis)
-    return AnalysisRunResponse(analysis_id=analysis.id)
+    return AnalysisRunResponse(analysis_id=analysis.id, filename=body.filename or "")
 
 
 def _load_analysis(analysis_id: str, user_id: str, db: Session) -> Analysis:
@@ -138,6 +139,15 @@ def get_stats(
     """Compute KPI stats and positions for the analysis."""
     analysis = _load_analysis(analysis_id, current_user.id, db)
     trades = _load_trades(analysis, current_user.id, db)
+
+    # Look up filename from linked RawFile
+    analysis_filename = ""
+    if analysis.raw_file_id:
+        from app.models.raw_file import RawFile
+        rf = db.query(RawFile).filter(RawFile.id == analysis.raw_file_id).first()
+        if rf:
+            analysis_filename = rf.filename
+
     positions = PositionBuilder.build(trades)
 
     total_trades = len(trades)
@@ -251,6 +261,7 @@ def get_stats(
 
     # --- Return ---
     return StatsResponse(
+        filename=analysis_filename,
         total_trades=total_trades,
         total_positions=total_positions,
         unknown_cost_count=unknown_cost_count,

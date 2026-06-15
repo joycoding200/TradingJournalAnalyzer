@@ -5,6 +5,7 @@ import { listReports } from "../api/report";
 interface ReportItem {
   id: string;
   analysis_id?: string;
+  filename?: string;
   created_at?: string;
   title?: string;
 }
@@ -79,8 +80,12 @@ export default function History() {
             >
               <div className="flex justify-between items-center">
                 <div>
-                  <div className="font-medium">
-                    {report.title || `报告 ${report.id.slice(0, 8)}`}
+                  <div className="font-medium flex items-center gap-2">
+                    {report.filename ? (
+                      <span style={{ color: "var(--text-secondary)" }}>📄 {report.filename}</span>
+                    ) : (
+                      report.title || `报告 ${report.id.slice(0, 8)}`
+                    )}
                   </div>
                   {report.created_at && (
                     <div className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>

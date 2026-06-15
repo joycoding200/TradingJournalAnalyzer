@@ -59,7 +59,14 @@ export default function Analysis() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold">分析面板</h1>
+        <div>
+          <h1 className="text-xl font-semibold">分析面板</h1>
+          {stats.data?.filename && (
+            <div className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+              📄 {stats.data.filename}
+            </div>
+          )}
+        </div>
         <button
           onClick={handleGenerateReport}
           disabled={genReport.isPending}

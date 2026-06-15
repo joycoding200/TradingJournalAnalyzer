@@ -191,7 +191,10 @@ def list_reports(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List user's most recent reports (last 50)."""
+    """List user's most recent reports (last 50), with source filenames."""
+    from app.models.analysis import Analysis
+    from app.models.raw_file import RawFile
+
     reports = (
         db.query(Report)
         .filter(Report.user_id == current_user.id)
@@ -200,9 +203,29 @@ def list_reports(
         .all()
     )
 
+    analysis_ids = [r.analysis_id for r in reports if r.analysis_id]
+    filename_map: dict[str, str] = {}
+    if analysis_ids:
+        analyses = db.query(Analysis).filter(Analysis.id.in_(analysis_ids)).all()
+        raw_file_ids = [a.raw_file_id for a in analyses if a.raw_file_id]
+        filename_by_raw = {}
+        if raw_file_ids:
+            raw_files = db.query(RawFile).filter(RawFile.id.in_(raw_file_ids)).all()
+            filename_by_raw = {rf.id: rf.filename for rf in raw_files}
+        filename_map = {
+            a.id: filename_by_raw.get(a.raw_file_id, "")
+            for a in analyses if a.raw_file_id
+        }
+
     return ReportsListResponse(
         reports=[
-            ReportListItem(id=r.id, created_at=r.created_at) for r in reports
+            ReportListItem(
+                id=r.id,
+                analysis_id=r.analysis_id or "",
+                filename=filename_map.get(r.analysis_id, ""),
+                created_at=r.created_at,
+            )
+            for r in reports
         ],
         total=len(reports),
     )
