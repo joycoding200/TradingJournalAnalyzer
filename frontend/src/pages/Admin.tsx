@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { apiGet, apiPost } from "../api/client";
 
 interface UserItem {
   id: string; email: string; phone: string; nickname: string; created_at: string;
@@ -40,7 +39,16 @@ export default function Admin() {
   const handleLogin = async () => {
     setError("");
     try {
-      const data = await apiPost("/api/admin/login", { username: user, password: pass });
+      const resp = await fetch(`${BASE}/api/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user, password: pass }),
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({ detail: "登录失败" }));
+        throw new Error(e.detail);
+      }
+      const data = await resp.json();
       setToken(data.access_token);
       localStorage.setItem("admin_token", data.access_token);
     } catch (err) {
