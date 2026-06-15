@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**领域知识必读**: 所有涉及分析计算、指标定义、行为标签的开发，必须先参考 `docs/superpowers/FINANCE_DOMAIN.md`。开发完成后按 `docs/superpowers/VERIFICATION_CHECKLIST.md` 逐项自检。
+
 ## 项目概述
 
 TradingJournalAnalyzer（交易日志分析器）— 上传交易记录，AI 分析亏损原因并生成改善建议。目标用户为 A 股散户及期货散户。

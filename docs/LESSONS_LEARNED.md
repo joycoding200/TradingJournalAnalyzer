@@ -115,3 +115,34 @@
 - 6 个 Bug 修复（解析器硬匹配 ×5、category 过滤器、URL 对齐 ×3、字段名错误、CATEGORY_MAP、报告渲染）
 - 2 个功能新增（清空数据按钮、OpenRouter AI provider 支持）
 - 2 个体验优化（上传流程简化、导航栏用户菜单）
+
+---
+
+## 8. 金融领域知识缺失是最大的技术债（2026-06-15 审计会话）
+
+**现象**：经历 3 轮代码审计 + 2 轮 UI 审计，发现 ~70% 的问题不是代码 bug，而是金融定义错误或行业标准不一致：
+- COUNTER_TREND 识别的是"空头环境"而非"逆势交易"
+- Expectancy 用绝对金额而非 R-multiple
+- 最大回撤用绝对金额而非行业标准的百分比
+- PF 列用 `win_rate/(1-win_rate)` 而非 `gross_profit/gross_loss`
+- What-If 止损用最终 PnL 截断而非持仓期间日线 low 判断
+- 归因分析存在 Attribution Overlap
+
+**根因**：
+- CLAUDE.md 只有架构和技术栈，没有金融领域约束
+- E2E 测试能验证"算出了数字"，不能验证"数字的含义是否正确"
+- 单人开发 + 缺少金融领域 review 环节
+
+**教训**：
+- 项目文档必须包含领域知识，不能只有架构
+- 每个指标必须定义：公式、行业标准格式、TradesViz/Edgewonk 参照
+- 每个行为标签必须定义边界：它是什么、不是什么的明确正反例
+- 新功能开发完成后必须逐项检查领域知识，不能只跑 E2E
+- E2E 测试通过 ≠ 结果正确，需要独立的金融逻辑验证环节
+
+**改进**：
+- 新增 `docs/superpowers/FINANCE_DOMAIN.md` — 14 个指标词典 + 标签边界 + 行业标准
+- 新增 `docs/superpowers/VERIFICATION_CHECKLIST.md` — 6 类 30 项开发自检清单
+- CLAUDE.md 增加领域知识引用
+
+**涉及文件**：`docs/superpowers/FINANCE_DOMAIN.md`, `docs/superpowers/VERIFICATION_CHECKLIST.md`, `CLAUDE.md`
