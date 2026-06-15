@@ -90,6 +90,7 @@ class InsightResponse(BaseModel):
     categories: dict[str, list[InsightPatternItem]] = {}
     best_pattern: Optional[InsightPatternItem] = None
     worst_pattern: Optional[InsightPatternItem] = None
+    baseline_expectancy: float = 0.0  # V2.3 overall expectancy for comparison
 
 
 class AttributionItem(BaseModel):

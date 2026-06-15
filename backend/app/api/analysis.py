@@ -359,6 +359,10 @@ def get_insight(
     outcome_items = [p for p in all_items if _module_for_pattern(p.pattern_name) == "outcome"]
     psychology_items = [p for p in all_items if _module_for_pattern(p.pattern_name) == "psychology"]
 
+    # V2.3: baseline expectancy (overall) for behavior evaluation
+    valid_positions = [p for i, p in enumerate(positions) if getattr(p, "cost_known", True)]
+    baseline_expectancy = InsightItem.compute(valid_positions, "overall") if valid_positions else 0.0
+
     significant = [p for p in all_items if p.count >= 5]
     best = significant[0] if significant else None
     worst = significant[-1] if len(significant) > 1 else None
@@ -377,6 +381,7 @@ def get_insight(
         categories=cat_items,
         best_pattern=best,
         worst_pattern=worst,
+        baseline_expectancy=round(baseline_expectancy, 4),
     )
 
 

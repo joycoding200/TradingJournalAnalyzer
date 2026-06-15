@@ -123,18 +123,25 @@ export default function Analysis() {
                         <th className="p-3 text-left">标签</th>
                         <th className="p-3 text-right">次数</th>
                         <th className="p-3 text-right">胜率</th>
-                        <th className="p-3 text-right">总盈亏</th>
-                        <th className="p-3 text-right">均收益率</th>
                         <th className="p-3 text-right">预期值</th>
                         <th className="p-3 text-right">PF</th>
+                        <th className="p-3 text-left" style={{ maxWidth: 140 }}>评价</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(insight.data as any)[insightDim]?.map((p: any) => {
                         const isPos = p.expectancy >= 0;
+                        const baseline = (insight.data as any).baseline_expectancy || 0;
+                        const vsBaseline = p.expectancy - baseline;
                         const pf = p.win_rate > 0 && p.win_rate < 1
                           ? (p.win_rate / (1 - p.win_rate))
                           : p.win_rate >= 1 ? 999 : 0;
+                        const evalText = vsBaseline > 0.005 ? "优于均值，建议保持"
+                          : vsBaseline < -0.005 ? "拖累收益，建议减少"
+                          : "接近均值";
+                        const evalColor = vsBaseline > 0.005 ? "var(--success)"
+                          : vsBaseline < -0.005 ? "var(--danger)"
+                          : "var(--text-secondary)";
                         return (
                           <tr
                             key={p.pattern_name}
@@ -150,22 +157,19 @@ export default function Analysis() {
                             <td className="p-3 text-right" style={{ color: p.win_rate >= 0.5 ? "var(--success)" : "var(--danger)" }}>
                               {(p.win_rate * 100).toFixed(1)}%
                             </td>
-                            <td className="p-3 text-right" style={{ color: p.total_pnl >= 0 ? "var(--success)" : "var(--danger)" }}>
-                              {p.total_pnl >= 0 ? "+" : ""}{p.total_pnl.toFixed(2)}
-                            </td>
-                            <td className="p-3 text-right" style={{ color: p.avg_pnl_pct >= 0 ? "var(--success)" : "var(--danger)" }}>
-                              {(p.avg_pnl_pct * 100).toFixed(2)}%
-                            </td>
                             <td className="p-3 text-right font-semibold" style={{ color: isPos ? "var(--success)" : "var(--danger)" }}>
-                              {p.expectancy >= 0 ? "+" : ""}{p.expectancy.toFixed(2)}
+                              {p.expectancy >= 0 ? "+" : ""}{(p.expectancy * 100).toFixed(1)}%
                             </td>
                             <td className="p-3 text-right" style={{ color: pf >= 1.5 ? "var(--success)" : pf >= 1 ? "var(--accent)" : "var(--danger)" }}>
                               {p.win_rate >= 1 ? "∞" : pf.toFixed(2)}
                             </td>
+                            <td className="p-3 text-xs" style={{ color: evalColor, maxWidth: 140 }}>
+                              <span style={{ fontWeight: 600 }}>{vsBaseline > 0 ? "↑" : vsBaseline < 0 ? "↓" : "→"}</span> {evalText}
+                            </td>
                           </tr>
                         );
                       }) || (
-                        <tr><td colSpan={7} className="p-3 text-center" style={{ color: "var(--text-secondary)" }}>无数据</td></tr>
+                        <tr><td colSpan={6} className="p-3 text-center" style={{ color: "var(--text-secondary)" }}>无数据</td></tr>
                       )}
                     </tbody>
                   </table>
