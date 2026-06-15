@@ -143,7 +143,7 @@ export default function Analysis() {
                         <th className="p-3 text-right">次数</th>
                         <th className="p-3 text-right">胜率</th>
                         <th className="p-3 text-right">预期值</th>
-                        <th className="p-3 text-right">PF</th>
+                        <th className="p-3 text-right">盈亏比(PF)</th>
                         <th className="p-3 text-left" style={{ maxWidth: 140 }}>评价</th>
                       </tr>
                     </thead>
