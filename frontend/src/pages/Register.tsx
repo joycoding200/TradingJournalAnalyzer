@@ -26,6 +26,7 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -107,11 +108,15 @@ export default function Register() {
               className="px-4 py-3 text-sm outline-none focus:border-[var(--accent)]" />
           )}
 
-          <div>
-            <input type="password" placeholder="密码（至少8位，含字母+数字）" value={password}
+          <div style={{ position: "relative" }}>
+            <input type={showPw ? "text" : "password"} placeholder="密码（至少8位，含字母+数字）" value={password}
               onChange={(e) => setPassword(e.target.value)} required minLength={8}
               style={{ backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: "8px", color: "var(--text-primary)" }}
-              className="px-4 py-3 text-sm outline-none focus:border-[var(--accent)] w-full" />
+              className="px-4 py-3 pr-10 text-sm outline-none focus:border-[var(--accent)] w-full" />
+            <button type="button" onClick={() => setShowPw(!showPw)}
+              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 16, padding: 4, lineHeight: 1 }}>
+              {showPw ? "🙈" : "👁"}
+            </button>
             {password && (
               <div className="mt-2">
                 <div style={{ backgroundColor: "var(--border)", borderRadius: 4, height: 4, overflow: "hidden" }}>

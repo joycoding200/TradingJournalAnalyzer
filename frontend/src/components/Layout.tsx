@@ -1,13 +1,39 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { clearTrades } from "../api/upload";
+import { getMe, updateNickname } from "../api/auth";
 
 export default function Layout() {
   const { isLoggedIn, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [nickname, setNickname] = useState("");
+  const [editingNick, setEditingNick] = useState(false);
+  const [nickInput, setNickInput] = useState("");
+  const [nickSaving, setNickSaving] = useState(false);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      getMe().then(u => setNickname(u.nickname || "")).catch(() => {});
+    }
+  }, [isLoggedIn]);
+
+  const handleSaveNick = async () => {
+    const v = nickInput.trim();
+    if (!v || v.length < 2 || v.length > 20) return;
+    setNickSaving(true);
+    try {
+      await updateNickname(v);
+      setNickname(v);
+      setEditingNick(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "修改失败");
+    } finally {
+      setNickSaving(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -71,6 +97,43 @@ export default function Layout() {
                         minWidth: 140,
                       }}
                     >
+                      {/* Nickname display + edit */}
+                      <div className="px-4 py-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+                        {editingNick ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              value={nickInput}
+                              onChange={(e) => setNickInput(e.target.value)}
+                              maxLength={20}
+                              placeholder="输入昵称"
+                              autoFocus
+                              style={{
+                                backgroundColor: "var(--bg-tertiary)",
+                                border: "1px solid var(--border)",
+                                borderRadius: 4,
+                                color: "var(--text-primary)",
+                                padding: "2px 6px",
+                                fontSize: 13,
+                                width: 100,
+                              }}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleSaveNick(); if (e.key === "Escape") setEditingNick(false); }}
+                            />
+                            <button onClick={handleSaveNick} disabled={nickSaving}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 12, padding: 0 }}>
+                              {nickSaving ? "..." : "保存"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span>{nickname || "未设置昵称"}</span>
+                            <button onClick={() => { setNickInput(nickname); setEditingNick(true); }}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 11, padding: 0 }}>
+                              ✎
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
                       <button
                         onClick={() => { navigate("/history"); setMenuOpen(false); }}
                         className="w-full text-left text-sm px-4 py-2 border-0 cursor-pointer bg-transparent hover:bg-[var(--bg-tertiary)] transition-colors"
