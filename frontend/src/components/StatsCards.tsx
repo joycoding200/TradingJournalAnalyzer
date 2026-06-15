@@ -82,8 +82,10 @@ export default function StatsCards({ stats }: StatsCardsProps) {
       "盈利笔数 ÷ 总笔数"),
     card((stats.max_drawdown_pct ?? 0) > 0.2 ? "var(--danger)" : (stats.max_drawdown_pct ?? 0) > 0.1 ? "var(--accent)" : "var(--success)", "最大回撤", formatPct(stats.max_drawdown_pct ?? 0),
       `最大回撤金额 ${formatMoney(stats.max_drawdown ?? 0)}`),
-    card((stats.max_win ?? 0) > 0 ? "var(--success)" : "var(--text-primary)", "单笔最大盈利", formatMoney(stats.max_win ?? 0)),
-    card((stats.max_loss ?? 0) < 0 ? "var(--danger)" : "var(--text-primary)", "单笔最大亏损", formatMoney(stats.max_loss ?? 0)),
+    card("var(--success)", "单笔最大盈利", formatMoney(stats.max_win ?? 0),
+      stats.max_win_symbol ? `${stats.max_win_symbol} ${stats.max_win_date}` : undefined),
+    card("var(--danger)", "单笔最大亏损", formatMoney(stats.max_loss ?? 0),
+      stats.max_loss_symbol ? `${stats.max_loss_symbol} ${stats.max_loss_date}` : undefined),
     card("var(--text-primary)", "完整交易", `${stats.total_positions ?? 0}`,
       `${stats.win_count ?? 0}盈 / ${stats.loss_count ?? 0}亏`),
   ];

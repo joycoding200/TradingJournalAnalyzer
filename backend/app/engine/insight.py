@@ -12,7 +12,9 @@ class InsightItem:
     win_rate: float
     total_pnl: float
     avg_pnl_pct: float
-    expectancy: float = 0.0  # per-trade expected value
+    expectancy: float = 0.0
+    gross_profit: float = 0.0
+    gross_loss: float = 0.0  # per-trade expected value
 
     @staticmethod
     def compute(positions, pattern_name):
@@ -130,6 +132,8 @@ class InsightEngine:
         for pat_name, data in by_pattern.items():
             count = len(data["positions"])
             total_pnl_all = sum(p.pnl for p in data["positions"])
+            gross_profit = sum(p.pnl for p in data["positions"] if p.pnl > 0)
+            gross_loss = abs(sum(p.pnl for p in data["positions"] if p.pnl < 0))
             expectancy = InsightItem.compute(data["positions"], pat_name)
             results.append(
                 InsightItem(
@@ -144,6 +148,8 @@ class InsightEngine:
                         else 0.0
                     ),
                     expectancy=round(expectancy, 2),
+                    gross_profit=round(gross_profit, 2),
+                    gross_loss=round(gross_loss, 2),
                 )
             )
 
@@ -196,11 +202,15 @@ class InsightEngine:
                 # Sample-size-weighted score
                 weight = math.log(max(count, 5)) / math.log(5)
                 weighted_score = total_pnl * weight
+                gross_profit = sum(p.pnl for p in positions_in_cat if p.pnl > 0)
+                gross_loss = abs(sum(p.pnl for p in positions_in_cat if p.pnl < 0))
                 items.append(InsightItem(
                     pattern_name=pat_name, count=count, win_count=wins,
                     win_rate=round(win_rate, 4), total_pnl=round(total_pnl, 2),
                     avg_pnl_pct=round(sum(p.pnl_pct for p in positions_in_cat) / count, 4),
                     expectancy=round(expectancy, 2),
+                    gross_profit=round(gross_profit, 2),
+                    gross_loss=round(gross_loss, 2),
                 ))
             items.sort(key=lambda x: x.total_pnl * (math.log(max(x.count, 5)) / math.log(5)), reverse=True)
             result[cat] = items

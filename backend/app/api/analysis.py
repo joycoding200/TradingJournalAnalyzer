@@ -156,8 +156,14 @@ def get_stats(
         if valid_count > 0
         else 0.0
     )
-    max_win = max((p.pnl for p in valid_positions), default=0.0)
-    max_loss = min((p.pnl for p in valid_positions), default=0.0)
+    max_win_pos = max(valid_positions, key=lambda p: p.pnl, default=None)
+    max_loss_pos = min(valid_positions, key=lambda p: p.pnl, default=None)
+    max_win = max_win_pos.pnl if max_win_pos else 0.0
+    max_loss = max_loss_pos.pnl if max_loss_pos else 0.0
+    max_win_symbol = max_win_pos.symbol if max_win_pos else ""
+    max_win_date = str(max_win_pos.exit_date) if max_win_pos else ""
+    max_loss_symbol = max_loss_pos.symbol if max_loss_pos else ""
+    max_loss_date = str(max_loss_pos.exit_date) if max_loss_pos else ""
     consecutive_losses = _compute_consecutive_losses(valid_positions)
 
     # Outcome distribution
@@ -257,6 +263,10 @@ def get_stats(
         avg_loss_holding_days=round(avg_loss_holding, 1),
         max_win=round(max_win, 2),
         max_loss=round(max_loss, 2),
+        max_win_symbol=max_win_symbol,
+        max_win_date=max_win_date,
+        max_loss_symbol=max_loss_symbol,
+        max_loss_date=max_loss_date,
         consecutive_losses=consecutive_losses,
         profit_factor=round(profit_factor, 2),
         avg_win_amount=round(avg_win_amount, 2),
@@ -356,6 +366,8 @@ def get_insight(
             total_pnl=i.total_pnl,
             avg_pnl_pct=round(i.avg_pnl_pct, 4),
             expectancy=round(i.expectancy, 4),
+            gross_profit=round(getattr(i, "gross_profit", 0.0), 2),
+            gross_loss=round(getattr(i, "gross_loss", 0.0), 2),
         )
 
     # Flat list + per-category lists

@@ -151,7 +151,7 @@ export default function Analysis() {
                       {(insight.data as any)[insightDim]?.map((p: any) => {
                         const isPos = p.expectancy > 0;
                         const baseline = (insight.data as any).baseline_expectancy || 0;
-                        const pf = p.win_rate > 0 && p.win_rate < 1 ? (p.win_rate / (1 - p.win_rate)) : p.win_rate >= 1 ? 999 : 0;
+                        const pf = (p.gross_loss ?? 0) > 0 ? (p.gross_profit ?? 0) / (p.gross_loss ?? 1) : (p.gross_profit ?? 0) > 0 ? 999 : 0;
                         const isSmallSample = p.count < 5;
 
                         // Multi-dimension evaluation (V2.4)

@@ -47,6 +47,10 @@ class StatsResponse(BaseModel):
     avg_loss_holding_days: float = 0.0
     max_win: float
     max_loss: float
+    max_win_symbol: str = ""
+    max_win_date: str = ""
+    max_loss_symbol: str = ""
+    max_loss_date: str = ""
     consecutive_losses: int
     profit_factor: float = 0.0
     avg_win_amount: float = 0.0
@@ -78,6 +82,8 @@ class InsightPatternItem(BaseModel):
     total_pnl: float
     avg_pnl_pct: float
     expectancy: float = 0.0
+    gross_profit: float = 0.0
+    gross_loss: float = 0.0
 
 
 class InsightResponse(BaseModel):
