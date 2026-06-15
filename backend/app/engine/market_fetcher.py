@@ -1,4 +1,6 @@
-"""Market data fetcher — pull A-share daily bars via akshare, cache to DailyBar.
+"""Market data fetcher — pull A-share daily bars via mootdx (TDX TCP), cache to DailyBar.
+
+Data source priority: mootdx (TCP 7709, no IP blocking) → skip market patterns gracefully.
 
 Usage:
     from app.engine.market_fetcher import ensure_market_data
@@ -7,12 +9,26 @@ Usage:
     data = ensure_market_data(db, ["600036", "000858"], start, end)
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.engine.market_data import MarketDataCache
+
+# Module-level client — TCP connection reused across symbols
+_CLIENT = None
+_PAGE_SIZE = 800
+
+
+def _get_client():
+    """Return a cached mootdx Quotes client for standard market."""
+    global _CLIENT
+    if _CLIENT is None:
+        from mootdx.quotes import Quotes
+        from mootdx.consts import KLINE_DAILY
+        _CLIENT = Quotes.factory(market='std', timeout=15)
+    return _CLIENT
 
 
 def _compute_moving_averages(df: pd.DataFrame) -> pd.DataFrame:
@@ -26,44 +42,57 @@ def _compute_moving_averages(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _symbol_ak(symbol: str) -> str:
-    """Convert 6-digit code to akshare format ('sh600036' or 'sz000858')."""
-    if symbol[0] in ("6", "5", "9"):
-        return f"sh{symbol}"
-    return f"sz{symbol}"
-
-
 def _fetch_single_symbol(db: Session, symbol: str) -> int:
-    """Fetch all history for one symbol. Returns count of new bars stored."""
-    import akshare as ak
+    """Fetch all history for one symbol via mootdx. Returns count of new bars stored."""
+    from mootdx.consts import KLINE_DAILY
 
-    try:
-        raw = ak.stock_zh_a_hist(
-            symbol=symbol, period="daily", adjust="qfq"
-        )
-    except Exception:
+    client = _get_client()
+
+    # Paginate through all available history
+    all_frames = []
+    start = 0
+    while True:
+        try:
+            chunk = client.bars(
+                symbol=symbol,
+                frequency=KLINE_DAILY,
+                start=start,
+                offset=_PAGE_SIZE,
+            )
+        except Exception:
+            break
+
+        if chunk is None or chunk.empty:
+            break
+
+        all_frames.append(chunk)
+        if len(chunk) < _PAGE_SIZE:
+            break
+        start += _PAGE_SIZE
+
+    if not all_frames:
         return 0
 
-    if raw.empty:
-        return 0
+    raw = pd.concat(all_frames, ignore_index=False)
+    raw = raw[~raw.index.duplicated(keep='first')]
 
-    raw = raw.rename(
-        columns={
-            "日期": "date",
-            "开盘": "open",
-            "最高": "high",
-            "最低": "low",
-            "收盘": "close",
-            "成交量": "volume",
-        }
-    )
-    raw["date"] = pd.to_datetime(raw["date"]).dt.date
-    raw["symbol"] = symbol
+    # Normalize columns to match DailyBar schema
+    if 'datetime' in raw.columns:
+        raw['date'] = pd.to_datetime(raw['datetime']).dt.date
+    else:
+        raw['date'] = raw.index.to_series().dt.date
 
-    if "volume" not in raw:
-        raw["volume"] = 0.0
+    raw['symbol'] = symbol
+    raw['volume'] = raw.get('vol', raw.get('volume', 0))
 
-    # Compute MAs over full history for accuracy
+    # Rename columns to expected format
+    col_map = {}
+    for c in ['open', 'high', 'low', 'close', 'amount']:
+        if c in raw.columns:
+            col_map[c] = c
+    raw = raw.rename(columns=col_map)
+
+    # Compute MAs over full history
     raw = _compute_moving_averages(raw)
 
     # Find dates not already cached
@@ -77,8 +106,7 @@ def _fetch_single_symbol(db: Session, symbol: str) -> int:
         pass
 
     new_rows = [
-        r
-        for _, r in raw.iterrows()
+        r for _, r in raw.iterrows()
         if r["date"] not in existing_dates
     ]
     if not new_rows:
@@ -89,22 +117,23 @@ def _fetch_single_symbol(db: Session, symbol: str) -> int:
         [
             {
                 "symbol": symbol,
-                "date": r["date"],
-                "open": float(r["open"]),
-                "high": float(r["high"]),
-                "low": float(r["low"]),
-                "close": float(r["close"]),
-                "volume": float(r.get("volume", 0.0)),
-                "ma5": float(r["ma5"]) if pd.notna(r.get("ma5")) else None,
-                "ma10": float(r["ma10"]) if pd.notna(r.get("ma10")) else None,
-                "ma20": float(r["ma20"]) if pd.notna(r.get("ma20")) else None,
-                "ma60": float(r["ma60"]) if pd.notna(r.get("ma60")) else None,
+                "date": row["date"],
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row.get("volume", 0.0) or 0.0),
+                "ma5": float(row["ma5"]) if pd.notna(row.get("ma5")) else None,
+                "ma10": float(row["ma10"]) if pd.notna(row.get("ma10")) else None,
+                "ma20": float(row["ma20"]) if pd.notna(row.get("ma20")) else None,
+                "ma60": float(row["ma60"]) if pd.notna(row.get("ma60")) else None,
                 "avg_volume_20d": (
-                    float(r["avg_volume_20d"])
-                    if pd.notna(r.get("avg_volume_20d"))
+                    float(row["avg_volume_20d"])
+                    if pd.notna(row.get("avg_volume_20d"))
                     else None
                 ),
             }
+            for row in new_rows
         ],
     )
     return stored
@@ -115,7 +144,7 @@ def ensure_market_data(
 ) -> dict:
     """Fetch and cache daily bars for given symbols, then return market_data dict.
 
-    Fetches from 60 trading days before `start` to ensure MAs are accurate.
+    Fetches from 120 calendar days before `start` to ensure MAs are accurate.
 
     Returns dict in PatternEngine format:
         {symbol: {date_str: {open, high, low, close, volume, ma5, ...}}}
@@ -123,7 +152,7 @@ def ensure_market_data(
     if not symbols:
         return {}
 
-    lookback_start = start - timedelta(days=120)  # ~60 trading days
+    lookback_start = start - timedelta(days=120)
 
     for sym in set(symbols):
         _fetch_single_symbol(db, sym)

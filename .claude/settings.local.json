@@ -132,7 +132,12 @@
       "mcp__plugin_playwright_playwright__browser_network_requests",
       "mcp__plugin_playwright_playwright__browser_network_request",
       "mcp__plugin_playwright_playwright__browser_wait_for",
-      "Bash(echo \"---EXIT:$?\")"
+      "Bash(echo \"---EXIT:$?\")",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "mcp__plugin_ecc_context7__resolve-library-id",
+      "mcp__plugin_ecc_context7__query-docs",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot"
     ]
   },
   "enableAllProjectMcpServers": true,

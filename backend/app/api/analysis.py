@@ -11,6 +11,7 @@ from app.models.analysis import Analysis
 from app.models.trade import Trade
 from app.models.user import User
 from app.engine.insight import InsightEngine
+from app.engine.market_fetcher import ensure_market_data
 from app.engine.pattern import PatternEngine
 from app.engine.position import PositionBuilder
 from app.engine.whatif import ProfitAttribution
@@ -234,11 +235,27 @@ def get_stats(
     )
 
 
-def _build_category_map(positions) -> dict[int, dict[str, str]]:
-    """Tag each position and return {index: {category: pattern_name}}."""
+def _build_category_map(
+    positions, trades=None, market_data=None
+) -> dict[int, dict[str, str]]:
+    """Tag each position and return {index: {category: pattern_name}}.
+
+    Merges Module 1 (entry, requires market_data), Module 2 (holding),
+    Module 3 (risk/exit) tags. One tag per category per position.
+    """
+    tag_kwargs = {}
+    if trades:
+        tag_kwargs["trades"] = trades
+        tag_kwargs["all_trades"] = trades
+
     category_map: dict[int, dict[str, str]] = {}
     for i, pos in enumerate(positions):
-        results = PatternEngine.tag_position(pos, positions)
+        results = PatternEngine.tag_position(pos, positions, **tag_kwargs)
+        if market_data:
+            results.extend(
+                PatternEngine.tag_market_patterns(pos, market_data)
+            )
+            results = PatternEngine.resolve_hierarchy(results)
         resolved = PatternEngine.resolve_per_category(results)
         category_map[i] = {r.category: r.pattern_name for r in resolved if r.category}
     return category_map
@@ -259,7 +276,16 @@ def get_insight(
     analysis = _load_analysis(analysis_id, current_user.id, db)
     trades = _load_trades(analysis, current_user.id, db)
     positions = PositionBuilder.build(trades)
-    category_map = _build_category_map(positions)
+
+    # Fetch market data for entry-pattern tagging (CHASE/BOTTOM/BREAKOUT/TREND etc.)
+    symbols = list({p.symbol for p in positions})
+    market_data = {}
+    if symbols:
+        date_start = analysis.date_start
+        date_end = analysis.date_end
+        market_data = ensure_market_data(db, symbols, date_start, date_end)
+
+    category_map = _build_category_map(positions, trades=trades, market_data=market_data)
     items_by_cat = InsightEngine.analyze_by_category(positions, category_map)
 
     def to_pattern_item(i) -> InsightPatternItem:
@@ -316,7 +342,15 @@ def get_whatif(
     positions = PositionBuilder.build(trades)
     valid_positions = [p for p in positions if getattr(p, "cost_known", True)]
 
-    category_map = _build_category_map(positions)
+    # Fetch market data for entry-pattern tagging
+    symbols = list({p.symbol for p in positions})
+    market_data = {}
+    if symbols:
+        date_start = analysis.date_start
+        date_end = analysis.date_end
+        market_data = ensure_market_data(db, symbols, date_start, date_end)
+
+    category_map = _build_category_map(positions, trades=trades, market_data=market_data)
     # Use all available category patterns per position for behavioral what-if
     patterns_map_names: dict[int, list[str]] = {}
     for idx, cats in category_map.items():

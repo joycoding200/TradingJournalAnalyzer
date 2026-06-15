@@ -13,3 +13,4 @@ python-multipart==0.0.17
 email-validator==2.2.0
 openai>=2.0.0
 anthropic>=0.30.0
+mootdx>=0.11.0
