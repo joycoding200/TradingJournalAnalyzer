@@ -19,6 +19,7 @@
 - [ ] 标签识别的是"行为"还是"结果"？(behavior vs outcome 边界)
 - [ ] 是否有概念混淆？（市场环境 ≠ 交易行为，见 BULL_TREND vs TREND 案例）
 - [ ] 加仓/补仓标签是否检查了持仓状态？（见 PYRAMID/AVERAGE_DOWN 案例）
+- [ ] 阈值是否与 `pattern.py` 一致？（如 CHASE=MA20×1.10 + 20日高点×0.97；BREAKOUT 成交量×1.5；FOMO=当日最高×0.98）
 
 ## 三、显示格式验证
 
@@ -42,6 +43,14 @@
 - [ ] 全部盈利 / 全部亏损 → PF、Expectancy 是否正确？
 - [ ] 极大值（单笔盈利100倍于其他）→ 是否扭曲聚合指标？
 - [ ] 跨年数据 → 日期排序、持仓天数是否正确？
+
+## 五·补、数据隔离与副作用
+
+- [ ] "清空数据"是否走软删除（`Trade.is_deleted=True`），KPI 是否已排除 `is_deleted` 的记录？
+- [ ] `cost_known=False` 的前序持仓是否已用 `valid_positions` 排除，且 `unknown_cost_count` 有提示？
+- [ ] stats 端点首次调用时 `stats_snapshot` 落库是否不影响本次返回值（仅快照）？
+- [ ] admin 路由是否独立鉴权、与主用户 JWT 体系隔离（不共享 token / 依赖）？
+- [ ] 下载接口文件名是否已过滤 CRLF，防 header injection？
 
 ## 六、用户理解度检查
 

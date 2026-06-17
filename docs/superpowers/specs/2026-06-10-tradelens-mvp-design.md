@@ -2,6 +2,41 @@
 
 > Version: 1.0 | Date: 2026-06-10 | Status: Approved
 
+---
+
+> ## ⚠️ 已归档 / SUPERSEDED（2026-06-17 标注）
+>
+> 本文档是 **TradeLens MVP 阶段的设计快照**（2026-06-10），保留作历史记录。项目已更名为 **TradingJournalAnalyzer** 并持续演进，
+> 当前实现与本文档存在显著差异，**请勿据此理解现有系统**。
+>
+> *说明：本项目无发布版本/git tag，FastAPI 声明版本为 `0.1.0`；源码中散落的 `V1.x`/`V2.x` 仅为开发过程的功能里程碑注释，非产品版本号。*
+>
+> **当前事实来源（ authoritative ）：**
+> - [CLAUDE.md](../../../CLAUDE.md) — 项目概述、技术栈、架构、目录结构
+> - [FINANCE_DOMAIN.md](../FINANCE_DOMAIN.md) — 指标定义、标签边界、行业标准（开发必读）
+> - [VERIFICATION_CHECKLIST.md](../VERIFICATION_CHECKLIST.md) — 开发自检清单
+> - 源码本身（`backend/app/`、`frontend/src/`）
+>
+> ### 自 MVP 以来的关键演进（与下文冲突处以此为准）
+>
+> | 主题 | MVP 设计（本文档） | 当前实现 |
+> |------|--------------------|----------|
+> | 项目名 | TradeLens | TradingJournalAnalyzer |
+> | 前端 UI 库 | shadcn/ui | Tailwind CSS（未使用 shadcn） |
+> | 行情源 | a-stock-data（mootdx + 腾讯优先） | 仅 mootdx（通达信 TCP 7709），结果缓存到 `DailyBar` 表 |
+> | 标签体系 | 15 个标签 / 3 模块（含 TREND、COUNTER_TREND、STOP_LOSS、TAKE_PROFIT、CASH） | **4 维度**：market_env / behavior / outcome / psychology（见 FINANCE_DOMAIN.md §二）。TREND→BULL_TREND/BEAR_TREND；STOP_LOSS/TAKE_PROFIT/CASH 移除，新增 outcome（TIGHT_STOP/TRAILING_STOP/TIME_EXIT/LARGE_LOSS_EXIT）+ psychology（5 个低置信度标签）+ behavior 增 FOMO |
+> | Insight 引擎 | count/win_rate/total_pnl/avg_pnl_pct | 增加 PF、Expectancy(R)、MAE/MFE、止盈效率、Shapley 归因 |
+> | What-If 引擎 | 删除某标签后重算收益 | + 止损回测（持仓期间日线 low + 跳空 min(open,stop)）+ 因子贡献分析 |
+> | 数据库表 | 7 张（无 DailyBar） | 8 张（新增 `DailyBar` 行情缓存；`Analysis` 增加 `stats_snapshot`、`raw_file_id`） |
+> | AI Provider | openai / claude / deepseek | + openrouter |
+> | 管理后台 | 无 | 新增 `/api/admin/*`（独立鉴权，搜索用户、下载文件/分析/报告） |
+> | 解析器 | 按券商一插件一文件、表头匹配 | SmartParser（基于数据值推断列，不依赖列名）+ registry |
+> | 安全 | 密码 ≥6 位 | 密码 ≥8 位 + 含字母 + 含数字；软删除（`is_deleted`）；下载文件名过滤 CRLF |
+>
+> 下文为原始 MVP 设计，未做改动。
+
+---
+
 ## 1. 产品概述
 
 TradeLens — 上传交易记录（A股+期货），AI 分析亏损原因并生成改善建议。目标用户为 A 股散户和期货散户。

@@ -1,5 +1,20 @@
 # TradeLens MVP Implementation Plan
 
+> ## ⚠️ 已归档 / SUPERSEDED（2026-06-17 标注）
+>
+> 这是 **TradeLens MVP 阶段的构建计划**（2026-06-10），MVP 已完成，项目已更名为 **TradingJournalAnalyzer** 并持续演进。
+> 本计划中的任务清单、代码片段与文件结构均反映 MVP 时的意图，**与当前代码库多处不符**，仅供历史追溯，不要据此实现新功能。
+>
+> *说明：本项目无发布版本/git tag，FastAPI 声明版本为 `0.1.0`；源码中散落的 `V1.x`/`V2.x` 仅为开发过程的功能里程碑注释，非产品版本号。*
+>
+> **当前事实来源：** [CLAUDE.md](../../../CLAUDE.md) · [FINANCE_DOMAIN.md](../FINANCE_DOMAIN.md) · [VERIFICATION_CHECKLIST.md](../VERIFICATION_CHECKLIST.md) · 源码 `backend/app/` 与 `frontend/src/`
+>
+> 主要差异概要：项目更名；前端用 Tailwind（非 shadcn）；行情仅 mootdx 并缓存至 `DailyBar`；标签改为 4 维度体系；Insight/What-If 引擎大幅扩展（PF/Expectancy/MAE-MFE/Shapley/止损回测）；新增管理后台与 openrouter provider；解析器改为值推断的 SmartParser。详见 [spec 顶部演进表](../specs/2026-06-10-tradelens-mvp-design.md)。
+>
+> 下文为原始 MVP 计划，未做改动。
+
+---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build TradeLens MVP — upload trade records, run 6-layer analysis pipeline, generate AI diagnostic report with What If backtest.
