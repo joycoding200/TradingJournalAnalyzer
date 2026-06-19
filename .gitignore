@@ -19,6 +19,15 @@ env/
 test.db
 testfiles/
 
+# Runtime databases (created at startup via Base.metadata.create_all;
+# never check in real user data / market caches. Only schema or migration
+# files belong in version control.)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.old.*
+
 # Environment
 .env
 
