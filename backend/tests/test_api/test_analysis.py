@@ -157,6 +157,96 @@ class TestAnalysisStats(_BaseAnalysisTest):
         assert resp.status_code == 403
 
 
+# CSV variants for degenerate-path coverage (P0 / P1a regression tests).
+ALL_LOSS_CSV = (
+    "委托时间,证券代码,证券名称,买卖方向,成交价格,成交数量,手续费\n"
+    "2024-01-05 09:30:00,000001,亏损A,买入,10.00,1000,5.00\n"
+    "2024-01-08 14:00:00,000001,亏损A,卖出,9.00,1000,5.00\n"
+    "2024-02-01 09:30:00,600001,亏损B,买入,5.00,2000,3.00\n"
+    "2024-02-05 14:00:00,600001,亏损B,卖出,4.50,2000,3.00"
+)
+
+ALL_WIN_CSV = (
+    "委托时间,证券代码,证券名称,买卖方向,成交价格,成交数量,手续费\n"
+    "2024-01-05 09:30:00,000001,盈利A,买入,10.00,1000,5.00\n"
+    "2024-01-08 14:00:00,000001,盈利A,卖出,11.00,1000,5.00\n"
+    "2024-02-01 09:30:00,600001,盈利B,买入,5.00,2000,3.00\n"
+    "2024-02-05 14:00:00,600001,盈利B,卖出,5.50,2000,3.00"
+)
+
+
+def _import_csv(client, headers, csv_content: str) -> str:
+    """Upload + confirm + import an arbitrary QMT-format CSV. Returns raw_file_id."""
+    r = client.post(
+        "/api/upload",
+        headers=headers,
+        files={"file": ("trades.csv", csv_content, "text/csv")},
+    )
+    raw_file_id = r.json()["raw_file_id"]
+    client.post(
+        "/api/upload/confirm",
+        headers=headers,
+        json={"raw_file_id": raw_file_id, "source_type": "smart"},
+    )
+    client.post(
+        "/api/upload/import",
+        headers=headers,
+        json={"raw_file_id": raw_file_id},
+    )
+    return raw_file_id
+
+
+class TestDegeneratePaths:
+    """Regression tests for the two degenerate paths flagged in metrics review.
+
+    - 全程亏损 (never a winning trade): max_drawdown_pct must NOT collapse to 0.
+    - 100% 胜率 (no losing trade): profit_factor / win_loss_ratio must be null
+      (rendered as ∞), not 0.0.
+    """
+
+    def test_all_losing_max_drawdown_pct_nonzero(self, client):
+        """P0: an account that loses from trade one must report a real DD%."""
+        headers = get_auth_header(client, "all_loss@test.com")
+        raw_file_id = _import_csv(client, headers, ALL_LOSS_CSV)
+        aid = run_analysis(client, headers, raw_file_id=raw_file_id)
+        resp = client.get(f"/api/analysis/{aid}/stats", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Both positions lost → cumulative PnL never turns positive, so the
+        # pre-fix code pathed through `peak == 0` and reported DD% = 0. The
+        # fix falls back to total_invested as the denominator.
+        assert data["loss_count"] == 2
+        assert data["total_pnl"] < 0
+        assert data["max_drawdown"] > 0
+        assert data["max_drawdown_pct"] > 0, (
+            "全程亏损场景下最大回撤百分比不应为 0（P0 回归）"
+        )
+        # consecutive_losses should count both (pnl <= 0 unification, P2b)
+        assert data["consecutive_losses"] == 2
+
+    def test_all_winning_profit_factor_is_null(self, client):
+        """P1a: 100% win rate → PF / Payoff are undefined, not 0.0."""
+        headers = get_auth_header(client, "all_win@test.com")
+        raw_file_id = _import_csv(client, headers, ALL_WIN_CSV)
+        aid = run_analysis(client, headers, raw_file_id=raw_file_id)
+        resp = client.get(f"/api/analysis/{aid}/stats", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["loss_count"] == 0
+        assert data["win_count"] == 2
+        assert data["win_rate"] == 1.0
+        # Undefined, not "unqualified 0.0". Frontend renders these as ∞.
+        assert data["profit_factor"] is None, (
+            "无亏损时 profit_factor 应为 null（∞），不是 0.0（P1a 回归）"
+        )
+        assert data["win_loss_ratio"] is None, (
+            "无亏损时 win_loss_ratio 应为 null（∞），不是 0.0（P1a 回归）"
+        )
+        assert data["consecutive_losses"] == 0
+
+
 class TestAnalysisInsight(_BaseAnalysisTest):
     """Test the insight endpoint."""
 

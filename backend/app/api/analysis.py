@@ -127,11 +127,16 @@ def _load_trades(
 
 
 def _compute_consecutive_losses(positions) -> int:
-    """Count the longest consecutive losing streak from positions."""
+    """Count the longest consecutive losing streak from positions.
+
+    pnl <= 0 counts as a loss (flat-after-fees is a real small loss), keeping
+    this consistent with loss_count / avg_loss / Expectancy which all use
+    `pnl <= 0`. See FINANCE_DOMAIN.md §1.
+    """
     streak = 0
     max_streak = 0
     for p in positions:
-        if p.pnl < 0:
+        if p.pnl <= 0:
             streak += 1
             max_streak = max(max_streak, streak)
         else:
@@ -223,16 +228,34 @@ def get_stats(
     avg_loss_amount = sum(p.pnl for p in loss_positions) / len(loss_positions) if loss_positions else 0.0
     avg_win_pct = sum(p.pnl_pct for p in win_positions) / len(win_positions) if win_positions else 0.0
     avg_loss_pct = sum(p.pnl_pct for p in loss_positions) / len(loss_positions) if loss_positions else 0.0
-    win_loss_ratio = avg_win_amount / abs(avg_loss_amount) if avg_loss_amount != 0 else 0.0
+    # Payoff Ratio is undefined when there are no losses (division by zero).
+    # Return None so every consumer (UI, snapshot, future AI input) can render
+    # "∞" consistently instead of mistaking 0.0 for "unqualified". See P1a.
+    win_loss_ratio = avg_win_amount / abs(avg_loss_amount) if avg_loss_amount != 0 else None
 
     total_gross_profit = sum(p.pnl for p in win_positions)
     total_gross_loss = abs(sum(p.pnl for p in loss_positions))
-    profit_factor = total_gross_profit / total_gross_loss if total_gross_loss > 0 else 0.0
+    # Profit Factor is undefined when there are no losses. Return None (→ "∞")
+    # rather than 0.0, so snapshots and AI inputs don't read a perfect win-rate
+    # account as PF=0 "unqualified". See P1a.
+    profit_factor = total_gross_profit / total_gross_loss if total_gross_loss > 0 else None
 
     avg_win_holding = sum(p.holding_days for p in win_positions) / len(win_positions) if win_positions else 0.0
     avg_loss_holding = sum(p.holding_days for p in loss_positions) / len(loss_positions) if loss_positions else 0.0
 
+    # Total invested and return %
+    total_invested = sum(
+        p.avg_entry_price * p.total_quantity for p in valid_positions
+    )
+    total_return_pct = total_pnl / total_invested if total_invested > 0 else 0.0
+
     # Max drawdown: V2.5 → absolute + percentage (industry standard)
+    # Walk the cumulative-PnL curve by exit date. peak starts at 0; it only
+    # rises when cumulative PnL turns positive. For accounts that lose from
+    # the very first trade (cum_pnl never positive), peak stays 0 and a naive
+    # `max_dd / peak` would yield 0% — falsely rating a bleeding account as
+    # "excellent drawdown". Fall back to total_invested as the capital base
+    # so the percentage stays meaningful. See docs/review P0.
     sorted_positions = sorted(valid_positions, key=lambda p: p.exit_date)
     cum_pnl = 0.0
     peak = 0.0
@@ -244,13 +267,8 @@ def get_stats(
         dd = peak - cum_pnl
         if dd > max_dd:
             max_dd = dd
-    max_drawdown_pct = (max_dd / peak) if peak > 0 else 0.0
-
-    # Total invested and return %
-    total_invested = sum(
-        p.avg_entry_price * p.total_quantity for p in valid_positions
-    )
-    total_return_pct = total_pnl / total_invested if total_invested > 0 else 0.0
+    dd_denom = peak if peak > 0 else (total_invested if total_invested > 0 else 0.0)
+    max_drawdown_pct = (max_dd / dd_denom) if dd_denom > 0 else 0.0
 
     # MAE/MFE computation (V1.2)
     mae_mfe_stats = {}
@@ -276,7 +294,7 @@ def get_stats(
             "win_rate": round(win_rate, 2),
             "total_pnl": round(total_pnl, 2),
             "total_return_pct": round(total_return_pct, 4),
-            "profit_factor": round(profit_factor, 2),
+            "profit_factor": round(profit_factor, 2) if profit_factor is not None else None,
             "max_drawdown_pct": round(max_drawdown_pct, 4),
             "avg_holding_days": round(avg_holding_days, 1),
         }
@@ -302,10 +320,10 @@ def get_stats(
         max_loss_symbol=max_loss_symbol,
         max_loss_date=max_loss_date,
         consecutive_losses=consecutive_losses,
-        profit_factor=round(profit_factor, 2),
+        profit_factor=round(profit_factor, 2) if profit_factor is not None else None,
         avg_win_amount=round(avg_win_amount, 2),
         avg_loss_amount=round(avg_loss_amount, 2),
-        win_loss_ratio=round(win_loss_ratio, 2),
+        win_loss_ratio=round(win_loss_ratio, 2) if win_loss_ratio is not None else None,
         max_drawdown=round(max_dd, 2),
         max_drawdown_pct=round(max_drawdown_pct, 4),
         total_return_pct=round(total_return_pct, 4),

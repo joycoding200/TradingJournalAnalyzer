@@ -6,6 +6,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+# Password policy (CLAUDE.md): ≥8 chars + letter + digit. All test users share
+# one valid password; weak passwords for the rejection test use <8 chars.
+_TEST_PASSWORD = "pass1234"
+
+
 def _qmt_csv():
     """Generate valid QMT-format CSV with proper UTF-8 encoding."""
     return "委托时间,证券代码,买卖方向,成交价格,成交数量\n2026-01-05 09:35:00,600519,买入,1500.00,100\n2026-01-10 14:20:00,600519,卖出,1520.00,100\n"
@@ -13,7 +18,7 @@ def _qmt_csv():
 
 class TestAuthContracts:
     def test_register_response_shape(self, client):
-        resp = client.post("/api/auth/register", json={"email": "ct@test.com", "password": "pass123"})
+        resp = client.post("/api/auth/register", json={"email": "ct@test.com", "password": "pass1234"})
         assert resp.status_code == 201
         data = resp.json()
         assert "access_token" in data
@@ -25,7 +30,7 @@ class TestAuthContracts:
         assert resp.status_code == 400
 
     def test_register_invalid_email_rejected(self, client):
-        resp = client.post("/api/auth/register", json={"email": "notanemail", "password": "pass123"})
+        resp = client.post("/api/auth/register", json={"email": "notanemail", "password": "pass1234"})
         assert resp.status_code == 422
 
     def test_register_missing_fields(self, client):
@@ -33,15 +38,15 @@ class TestAuthContracts:
         assert resp.status_code == 422
 
     def test_login_response_shape(self, client):
-        client.post("/api/auth/register", json={"email": "lt@test.com", "password": "pass123"})
-        resp = client.post("/api/auth/login", json={"email": "lt@test.com", "password": "pass123"})
+        client.post("/api/auth/register", json={"email": "lt@test.com", "password": "pass1234"})
+        resp = client.post("/api/auth/login", json={"account": "lt@test.com", "password": "pass1234"})
         assert resp.status_code in (200, 201)
         data = resp.json()
         assert "access_token" in data
         assert "token_type" in data
 
     def test_login_invalid_credentials(self, client):
-        resp = client.post("/api/auth/login", json={"email": "no@test.com", "password": "wrong"})
+        resp = client.post("/api/auth/login", json={"account": "no@test.com", "password": "wrongpass1"})
         assert resp.status_code == 401
 
     def test_login_missing_password(self, client):
@@ -51,7 +56,7 @@ class TestAuthContracts:
 
 class TestUploadContracts:
     def _auth(self, client):
-        resp = client.post("/api/auth/register", json={"email": "up@test.com", "password": "pass123"})
+        resp = client.post("/api/auth/register", json={"email": "up@test.com", "password": "pass1234"})
         return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
     def test_upload_no_auth_rejected(self, client):
@@ -71,7 +76,7 @@ class TestUploadContracts:
 
     def test_confirm_without_raw_file(self, client):
         headers = self._auth(client)
-        resp = client.post("/api/upload/confirm", json={"raw_file_id": "nonexistent", "source_type": "qmt"}, headers=headers)
+        resp = client.post("/api/upload/confirm", json={"raw_file_id": "nonexistent", "source_type": "smart"}, headers=headers)
         assert resp.status_code == 404
 
     def test_import_without_confirm(self, client):
@@ -89,7 +94,7 @@ class TestUploadContracts:
         upload_data = resp.json()
         raw_id = upload_data["raw_file_id"]
 
-        resp = client.post("/api/upload/confirm", json={"raw_file_id": raw_id, "source_type": "qmt"}, headers=headers)
+        resp = client.post("/api/upload/confirm", json={"raw_file_id": raw_id, "source_type": "smart"}, headers=headers)
         assert resp.status_code in (200, 201)
         confirm_data = resp.json()
         assert confirm_data["count"] == 2
@@ -103,13 +108,13 @@ class TestUploadContracts:
 
 class TestAnalysisContracts:
     def _auth_and_import(self, client):
-        resp = client.post("/api/auth/register", json={"email": "an@test.com", "password": "pass123"})
+        resp = client.post("/api/auth/register", json={"email": "an@test.com", "password": "pass1234"})
         headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
         csv_bytes = _qmt_csv().encode("utf-8")
         files = {"file": ("t.csv", io.BytesIO(csv_bytes), "text/csv")}
         up = client.post("/api/upload", files=files, headers=headers)
         raw_id = up.json()["raw_file_id"]
-        client.post("/api/upload/confirm", json={"raw_file_id": raw_id, "source_type": "qmt"}, headers=headers)
+        client.post("/api/upload/confirm", json={"raw_file_id": raw_id, "source_type": "smart"}, headers=headers)
         client.post("/api/upload/import", json={"raw_file_id": raw_id}, headers=headers)
         return headers
 
@@ -167,8 +172,8 @@ class TestAnalysisContracts:
         headers = self._auth_and_import(client)
         run = client.post("/api/analysis/run", json={"date_start": "2026-01-01", "date_end": "2026-12-31"}, headers=headers)
         aid = run.json()["analysis_id"]
-        client.post("/api/auth/register", json={"email": "other@test.com", "password": "pass123"})
-        other_login = client.post("/api/auth/login", json={"email": "other@test.com", "password": "pass123"})
+        client.post("/api/auth/register", json={"email": "other@test.com", "password": "pass1234"})
+        other_login = client.post("/api/auth/login", json={"account": "other@test.com", "password": "pass1234"})
         other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
         resp = client.get(f"/api/analysis/{aid}/stats", headers=other_headers)
         assert resp.status_code == 404
@@ -176,13 +181,13 @@ class TestAnalysisContracts:
 
 class TestReportContracts:
     def _setup(self, client):
-        resp = client.post("/api/auth/register", json={"email": "rp@test.com", "password": "pass123"})
+        resp = client.post("/api/auth/register", json={"email": "rp@test.com", "password": "pass1234"})
         headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
         csv_bytes = _qmt_csv().encode("utf-8")
         files = {"file": ("t.csv", io.BytesIO(csv_bytes), "text/csv")}
         up = client.post("/api/upload", files=files, headers=headers)
         raw_id = up.json()["raw_file_id"]
-        client.post("/api/upload/confirm", json={"raw_file_id": raw_id, "source_type": "qmt"}, headers=headers)
+        client.post("/api/upload/confirm", json={"raw_file_id": raw_id, "source_type": "smart"}, headers=headers)
         client.post("/api/upload/import", json={"raw_file_id": raw_id}, headers=headers)
         run = client.post("/api/analysis/run", json={"date_start": "2026-01-01", "date_end": "2026-12-31"}, headers=headers)
         return headers, run.json()["analysis_id"]
@@ -232,8 +237,8 @@ class TestReportContracts:
         headers, aid = self._setup(client)
         gen = client.post("/api/report/generate", json={"analysis_id": aid}, headers=headers)
         rid = gen.json()["report_id"]
-        client.post("/api/auth/register", json={"email": "oth2@test.com", "password": "pass123"})
-        other = client.post("/api/auth/login", json={"email": "oth2@test.com", "password": "pass123"})
+        client.post("/api/auth/register", json={"email": "oth2@test.com", "password": "pass1234"})
+        other = client.post("/api/auth/login", json={"account": "oth2@test.com", "password": "pass1234"})
         other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
         resp = client.get(f"/api/report/{rid}", headers=other_headers)
         assert resp.status_code == 404
@@ -243,7 +248,7 @@ class TestReportContracts:
         assert resp.status_code == 403
 
     def test_list_reports_empty(self, client):
-        resp = client.post("/api/auth/register", json={"email": "noreports@test.com", "password": "pass123"})
+        resp = client.post("/api/auth/register", json={"email": "noreports@test.com", "password": "pass1234"})
         headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
         resp = client.get("/api/reports", headers=headers)
         assert resp.status_code in (200, 201)

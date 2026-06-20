@@ -144,6 +144,12 @@ class ProfitAttribution:
 
             for p in positions:
                 did_trigger = False
+                # The position's real PnL already has full commissions
+                # subtracted. To keep the counterfactual on the same fee
+                # basis, subtract the same commission from the capped/truncated
+                # PnL of triggered positions. Otherwise the stop-loss strategy
+                # looks artificially better than reality. See P1b.
+                pos_commission = getattr(p, "total_commission", 0.0) or 0.0
 
                 if market_data:
                     symbol_data = market_data.get(p.symbol, {})
@@ -163,7 +169,7 @@ class ProfitAttribution:
                                 exit_qty = p.total_quantity
                                 exit_cost = fill_price * exit_qty
                                 entry_cost = entry_price * exit_qty
-                                simulated_pnl += exit_cost - entry_cost
+                                simulated_pnl += exit_cost - entry_cost - pos_commission
                                 affected += 1
                                 did_trigger = True
                                 break
@@ -177,7 +183,10 @@ class ProfitAttribution:
                     else:
                         # No market_data at all → old PnL truncation fallback
                         if p.pnl_pct < -loss_cap:
-                            capped_pnl = -loss_cap * p.avg_entry_price * p.total_quantity
+                            capped_pnl = (
+                                -loss_cap * p.avg_entry_price * p.total_quantity
+                                - pos_commission
+                            )
                             simulated_pnl += capped_pnl
                             affected += 1
                         else:

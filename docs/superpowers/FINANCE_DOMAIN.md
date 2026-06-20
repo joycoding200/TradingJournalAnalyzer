@@ -11,6 +11,7 @@
 - **定义**: 盈利笔数 ÷ 总笔数（仅统计 cost_known=True 的完整交易）
 - **公式**: `win_count / valid_count`
 - **显示**: 百分比，如 `73.0%`
+- **⚠️ 平本交易（pnl==0）归属**: 计入**亏损**分母（`p.pnl <= 0` 视为非盈利）。理由：本项目 PnL 已扣除双边手续费，扣费后恰好为 0 意味着真实小幅亏损。因此 `loss_positions`、`avg_loss`、`consecutive_losses`、Expectancy 的 loss 项均以 `pnl <= 0` 判定，全链路口径一致。
 - **TradesViz 参照**: Win Rate
 
 ### 2. 总盈亏 (Total PnL)
