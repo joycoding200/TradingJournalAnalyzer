@@ -31,6 +31,10 @@ class PositionResult:
     entry_count: int = 0  # Number of buy batches (P0-1 grouped)
     total_buys: float = 0.0  # Total buy quantity (P0-1 grouped)
     total_sells: float = 0.0  # Total sell quantity (P0-1 grouped)
+    # Total commissions (buy + sell) the position actually incurred. `pnl`
+    # above already has these subtracted; exposed separately so counterfactual
+    # backtests (e.g. stop-loss) can keep the same fee basis. See P1b.
+    total_commission: float = 0.0
 
 
 class PositionBuilder:
@@ -157,6 +161,7 @@ class PositionBuilder:
                             pnl_pct=pnl_pct,
                             trade_ids=sell_trade_ids,
                             cost_known=True,
+                            total_commission=round(total_buy_comm + sell_comm, 2),
                         )
                     )
 
@@ -273,7 +278,8 @@ class PositionBuilder:
 
                 avg_exit = matched_sell_revenue / matched_sell_qty if matched_sell_qty > 0 else 0.0
                 # PnL = sell proceeds - buy cost - all fees
-                pnl = matched_sell_revenue - total_buy_cost - total_buy_comm - matched_sell_comm
+                total_commission = total_buy_comm + matched_sell_comm
+                pnl = matched_sell_revenue - total_buy_cost - total_commission
 
                 entry_date = buy_batches[0][3].date()
                 exit_date = sell_batches[0][3].date()
@@ -301,6 +307,7 @@ class PositionBuilder:
                         entry_count=num_buys,
                         total_buys=cum_buys,
                         total_sells=cum_sells,
+                        total_commission=round(total_commission, 2),
                     )
                 )
 

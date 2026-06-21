@@ -55,10 +55,11 @@ class StatsResponse(BaseModel):
     max_loss_symbol: str = ""
     max_loss_date: str = ""
     consecutive_losses: int
-    profit_factor: float = 0.0
+    # None when undefined: no losses → PF/Payoff are ∞, not 0. See P1a.
+    profit_factor: Optional[float] = None
     avg_win_amount: float = 0.0
     avg_loss_amount: float = 0.0
-    win_loss_ratio: float = 0.0
+    win_loss_ratio: Optional[float] = None
     max_drawdown: float = 0.0
     # V2.5 percentage versions (industry standard)
     max_drawdown_pct: float = 0.0
