@@ -232,9 +232,9 @@ export default function Analysis() {
             <div className="space-y-6">
               {/* V2.4 Shapley: collapsible "赚钱来源分析" */}
               {whatIf.data.shapley && whatIf.data.shapley.length > 0 && (
-                <Collapsible title="赚钱来源分析（公平归因，点击展开）">
+                <Collapsible title="赚钱来源分析（Shapley 公平归因，点击展开）">
                   <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-                    各标签对总收益的贡献占比，总和=100%，消除重复计算。
+                    用 Shapley Value 公平分配各标签对总收益的贡献，总和=100%，消除重复计算。
                   </p>
                   {whatIf.data.shapley.map((s: any) => (
                     <div key={s.pattern_name} className="mb-2">
@@ -295,11 +295,11 @@ export default function Analysis() {
                 </div>
               )}
 
-              {/* Factor Contribution Analysis */}
+              {/* Factor Contribution Analysis (counterfactual leave-one-out) */}
               <div>
-                <h2 className="text-sm font-medium mb-3">因子贡献分析</h2>
+                <h2 className="text-sm font-medium mb-3">因子贡献分析（反事实归因）</h2>
                 <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-                  展示每种行为模式对总盈亏的金额贡献。此分析反映持仓组合的盈亏构成，并非反事实回测。
+                  逐一移除某行为标签后重算收益，看该标签对总盈亏的金额影响。与上方 Shapley 公平归因不同：这里反映"如果没有这类交易会怎样"，移除有重叠标签的仓位会被完整剔除。
                 </p>
                 {whatIf.data.items.map((item: any) => (
                   <div
