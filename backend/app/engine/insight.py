@@ -17,7 +17,7 @@ class InsightItem:
     gross_loss: float = 0.0  # per-trade expected value
 
     @staticmethod
-    def compute(positions, pattern_name):
+    def compute(positions):
         """Compute expectancy as R-multiple (based on pnl_pct, not absolute PnL).
 
         Uses percentage returns to avoid position-size bias.
@@ -133,8 +133,8 @@ class InsightEngine:
             count = len(data["positions"])
             total_pnl_all = sum(p.pnl for p in data["positions"])
             gross_profit = sum(p.pnl for p in data["positions"] if p.pnl > 0)
-            gross_loss = abs(sum(p.pnl for p in data["positions"] if p.pnl < 0))
-            expectancy = InsightItem.compute(data["positions"], pat_name)
+            gross_loss = abs(sum(p.pnl for p in data["positions"] if p.pnl <= 0))
+            expectancy = InsightItem.compute(data["positions"])
             results.append(
                 InsightItem(
                     pattern_name=pat_name,
@@ -198,12 +198,12 @@ class InsightEngine:
                 total_pnl = sum(p.pnl for p in positions_in_cat)
                 wins = data["wins"]
                 win_rate = wins / count
-                expectancy = InsightItem.compute(positions_in_cat, pat_name)
+                expectancy = InsightItem.compute(positions_in_cat)
                 # Sample-size-weighted score
                 weight = math.log(max(count, 5)) / math.log(5)
                 weighted_score = total_pnl * weight
                 gross_profit = sum(p.pnl for p in positions_in_cat if p.pnl > 0)
-                gross_loss = abs(sum(p.pnl for p in positions_in_cat if p.pnl < 0))
+                gross_loss = abs(sum(p.pnl for p in positions_in_cat if p.pnl <= 0))
                 items.append(InsightItem(
                     pattern_name=pat_name, count=count, win_count=wins,
                     win_rate=round(win_rate, 4), total_pnl=round(total_pnl, 2),

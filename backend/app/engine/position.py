@@ -136,7 +136,11 @@ class PositionBuilder:
                 if total_qty > 0:
                     avg_entry = total_cost / total_qty
                     # PnL = sell proceeds - buy cost - all fees
-                    sell_comm = trade_comm  # sell-side fees
+                    # Pro-rate sell commission if we only matched part of the sell
+                    if trade.quantity > 0:
+                        sell_comm = trade_comm * (total_qty / trade.quantity)
+                    else:
+                        sell_comm = 0.0
                     pnl = (trade.price - avg_entry) * total_qty - total_buy_comm - sell_comm
                     pnl_pct = (
                         pnl / (avg_entry * total_qty + total_buy_comm)
@@ -162,6 +166,26 @@ class PositionBuilder:
                             trade_ids=sell_trade_ids,
                             cost_known=True,
                             total_commission=round(total_buy_comm + sell_comm, 2),
+                        )
+                    )
+
+                # Handle orphan remaining quantity (partial orphan)
+                if total_qty > 0 and remaining > 0:
+                    # Use sell price as entry price for orphan portion
+                    positions.append(
+                        PositionResult(
+                            symbol=symbol,
+                            asset_type=trade.asset_type,
+                            entry_date=trade.datetime.date(),
+                            exit_date=trade.datetime.date(),
+                            holding_days=1,
+                            total_quantity=remaining,
+                            avg_entry_price=trade.price,
+                            avg_exit_price=trade.price,
+                            pnl=0.0,
+                            pnl_pct=0.0,
+                            trade_ids=[trade.id],
+                            cost_known=False,
                         )
                     )
 

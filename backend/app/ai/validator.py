@@ -39,7 +39,11 @@ class ReportValidator:
 
         total_trades = input_data.get("total_trades")
         if total_trades is not None:
-            found = ReportValidator._extract_number(report, r"(\d+)")
+            # Look for number with context like "交易次数"
+            found = ReportValidator._extract_number(report, r"交易次数[：:\s]*(\d+)")
+            if found is None:
+                # Fallback: any number
+                found = ReportValidator._extract_number(report, r"(\d+)")
             if found is not None and found != total_trades:
                 errors.append(
                     f"交易次数不匹配: 报告={found}, 数据={total_trades}"
@@ -47,9 +51,15 @@ class ReportValidator:
 
         win_rate = input_data.get("win_rate")
         if win_rate is not None:
+            # Look for percentage with context like "胜率"
             found = ReportValidator._extract_percentage(
-                report, r"(\d+(?:\.\d+)?)%"
+                report, r"胜率[：:\s]*(\d+(?:\.\d+)?)%"
             )
+            if found is None:
+                # Fallback: any percentage
+                found = ReportValidator._extract_percentage(
+                    report, r"(\d+(?:\.\d+)?)%"
+                )
             if found is not None and abs(found - win_rate) > 1.0:
                 errors.append(
                     f"胜率不匹配: 报告≈{found:.0f}%, 数据={win_rate:.0f}%"
@@ -92,6 +102,12 @@ class ReportValidator:
         return float(m.group(1)) if m else None
 
 
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 async def generate_with_retry(
     provider,
     system_prompt: str,
@@ -99,7 +115,7 @@ async def generate_with_retry(
     input_data: dict,
     max_retries: int = 3,
 ) -> str:
-    """Generate a report with automatic retry on validation failure.
+    """Generate a report with automatic retry on validation failure and network errors.
 
     If the generated report fails validation, a correction instruction is
     appended to the user prompt and the request is retried (up to max_retries).
@@ -118,7 +134,15 @@ async def generate_with_retry(
     current_prompt = user_prompt
 
     for attempt in range(max_retries):
-        report = await provider.generate(system_prompt, current_prompt)
+        try:
+            report = await provider.generate(system_prompt, current_prompt)
+        except Exception as e:
+            logger.warning(f"LLM generation failed (attempt {attempt+1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                raise
+            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+            continue
+
         result = validator.validate(report, input_data)
         if result.is_valid:
             return report

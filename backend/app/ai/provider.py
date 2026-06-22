@@ -24,7 +24,7 @@ class OpenAIProvider(LLMProvider):
     def __init__(self, base_url: str | None = None, model: str | None = None) -> None:
         import openai
 
-        kwargs = {"api_key": settings.openai_api_key}
+        kwargs = {"api_key": settings.openai_api_key, "timeout": 60.0}
         if base_url:
             kwargs["base_url"] = base_url
         self.client = openai.AsyncOpenAI(**kwargs)
@@ -39,6 +39,8 @@ class OpenAIProvider(LLMProvider):
             ],
             temperature=0.3,
         )
+        if not response.choices or not response.choices[0].message.content:
+            raise ValueError("Empty response from LLM")
         return response.choices[0].message.content.strip()
 
 
@@ -48,7 +50,7 @@ class ClaudeProvider(LLMProvider):
     def __init__(self) -> None:
         import anthropic
 
-        self.client = anthropic.AsyncAnthropic(api_key=settings.claude_api_key)
+        self.client = anthropic.AsyncAnthropic(api_key=settings.claude_api_key, timeout=60.0)
         self.model = settings.claude_model
 
     async def generate(self, system_prompt: str, user_prompt: str) -> str:
@@ -59,6 +61,8 @@ class ClaudeProvider(LLMProvider):
             max_tokens=4096,
             temperature=0.3,
         )
+        if not response.content or not response.content[0].text:
+            raise ValueError("Empty response from LLM")
         return response.content[0].text.strip()
 
 
@@ -71,6 +75,7 @@ class DeepSeekProvider(LLMProvider):
         self.client = openai.AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url="https://api.deepseek.com",
+            timeout=60.0,
         )
         self.model = settings.deepseek_model
 
@@ -83,6 +88,8 @@ class DeepSeekProvider(LLMProvider):
             ],
             temperature=0.3,
         )
+        if not response.choices or not response.choices[0].message.content:
+            raise ValueError("Empty response from LLM")
         return response.choices[0].message.content.strip()
 
 

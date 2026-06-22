@@ -2,30 +2,41 @@
 import io
 import json
 import re
+import urllib.parse
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth.jwt import create_token, get_current_user, verify_password
-
-
-def _safe_filename(name: str) -> str:
-    """Strip CRLF and control characters to prevent header injection."""
-    return re.sub(r'[\r\n\x00]', '', name)
+from app.auth.jwt import create_token, get_current_user, get_token_payload, verify_password
 from app.database import get_db
+from app.ratelimit import limiter
 from app.models.analysis import Analysis
 from app.models.raw_file import RawFile
 from app.models.report import Report
 from app.models.trade import Trade
 from app.models.user import User
 
+
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-def _require_admin(current_user: User = Depends(get_current_user)):
+def _safe_filename(name: str) -> str:
+    """Strip CRLF and control characters to prevent header injection, use RFC 5987 encoding."""
+    # First clean the filename
+    cleaned = re.sub(r'[^A-Za-z0-9._-]', '_', name)
+    return cleaned
+
+
+def _require_admin(
+    current_user: User = Depends(get_current_user),
+    payload: dict = Depends(get_token_payload),
+):
     if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    # Verify token has admin scope (for additional security)
+    if payload.get("scope") != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return current_user
 
@@ -68,13 +79,14 @@ class AnalysisItem(BaseModel):
 # --- Endpoints ---
 
 @router.post("/login")
-def admin_login(body: AdminLoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def admin_login(request: Request, body: AdminLoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(
         User.email == body.username, User.is_admin == True
     ).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="管理员账号或密码错误")
-    return {"access_token": create_token(user.id), "token_type": "bearer"}
+    return {"access_token": create_token(user.id, scope="admin"), "token_type": "bearer"}
 
 
 @router.get("/users")
@@ -171,10 +183,14 @@ def download_raw_file(
     rf = db.query(RawFile).filter(RawFile.id == file_id).first()
     if not rf:
         raise HTTPException(status_code=404, detail="文件不存在")
+    safe_name = _safe_filename(rf.filename)
+    encoded_name = urllib.parse.quote(safe_name)
     return StreamingResponse(
         io.BytesIO(rf.raw_content),
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={_safe_filename(rf.filename)}"},
+        headers={
+            "Content-Disposition": f"attachment; filename={safe_name}; filename*=UTF-8''{encoded_name}"
+        },
     )
 
 

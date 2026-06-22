@@ -1,21 +1,20 @@
 """Pydantic schemas for auth endpoints."""
 import re
+from typing import Optional
 
 from pydantic import BaseModel, EmailStr, field_validator
 
 
 class RegisterRequest(BaseModel):
-    email: str = ""
+    email: Optional[EmailStr] = None
     phone: str = ""
     password: str
 
-    @field_validator("email")
+    @field_validator("email", mode="before")
     @classmethod
-    def validate_email(cls, v: str) -> str:
-        if v:
-            # Basic email format check (EmailStr handles full validation)
-            if "@" not in v or "." not in v.split("@")[-1]:
-                raise ValueError("邮箱格式不正确")
+    def validate_email(cls, v):
+        if v is None or v == "":
+            return None
         return v
 
     @field_validator("phone")

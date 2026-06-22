@@ -1,11 +1,11 @@
 """Auth API routes: register, login, me, update profile."""
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-
 from app.auth.jwt import create_token, get_current_user, hash_password, verify_password
 from app.database import get_db
+from app.ratelimit import limiter
 from app.models.user import User, generate_nickname
 from app.schemas.auth import (
     LoginRequest,
@@ -47,7 +47,8 @@ def _password_strength_score(pw: str) -> int:
 @router.post(
     "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED
 )
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
     if not body.email and not body.phone:
         raise HTTPException(status_code=400, detail="请填写邮箱或手机号")
 
@@ -56,11 +57,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     if err:
         raise HTTPException(status_code=400, detail=err)
 
-    # Check duplicate email/phone
+    # Check duplicate email/phone (generic message to prevent account enumeration)
     if body.email and db.query(User).filter(User.email == body.email).first():
-        raise HTTPException(status_code=409, detail="该邮箱已被注册")
+        raise HTTPException(status_code=409, detail="注册失败，请检查输入")
     if body.phone and db.query(User).filter(User.phone == body.phone).first():
-        raise HTTPException(status_code=409, detail="该手机号已被注册")
+        raise HTTPException(status_code=409, detail="注册失败，请检查输入")
 
     user = User(
         email=body.email or None,
@@ -75,7 +76,8 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     # Try email first, then phone
     user = db.query(User).filter(
         (User.email == body.account) | (User.phone == body.account)

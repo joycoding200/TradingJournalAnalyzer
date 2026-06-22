@@ -6,6 +6,10 @@ from fastapi.testclient import TestClient
 
 from app.database import Base, get_db
 from app.main import app
+from app.ratelimit import limiter
+
+# Disable rate limiting in tests — tests fire many requests rapidly
+limiter.enabled = False
 
 TEST_DATABASE_URL = "sqlite://"
 

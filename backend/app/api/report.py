@@ -1,7 +1,5 @@
 """Report API routes: generate AI report, fetch report(s)."""
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -9,6 +7,7 @@ from app.ai.prompt import SYSTEM_PROMPT, build_user_prompt
 from app.ai.provider import get_llm
 from app.ai.validator import ReportValidator, generate_with_retry
 from app.auth.jwt import get_current_user
+from app.api.common import load_analysis, load_trades
 from app.config import settings
 from app.database import get_db
 from app.models.analysis import Analysis
@@ -19,6 +18,7 @@ from app.engine.insight import InsightEngine
 from app.engine.pattern import PatternEngine
 from app.engine.position import PositionBuilder
 from app.engine.whatif import ProfitAttribution
+from app.engine.market_fetcher import ensure_market_data
 from app.schemas.report import (
     ReportGenerateRequest,
     ReportGenerateResponse,
@@ -28,34 +28,6 @@ from app.schemas.report import (
 )
 
 router = APIRouter(prefix="/api", tags=["report"])
-
-
-def _load_analysis(analysis_id: str, user_id: str, db: Session) -> Analysis:
-    """Load analysis, raise 404 if not found or not owned by user."""
-    analysis = (
-        db.query(Analysis)
-        .filter(Analysis.id == analysis_id, Analysis.user_id == user_id)
-        .first()
-    )
-    if not analysis:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    return analysis
-
-
-def _load_trades(analysis: Analysis, user_id: str, db: Session) -> list:
-    """Load trades within the analysis date range."""
-    start_dt = datetime.combine(analysis.date_start, datetime.min.time())
-    end_dt = datetime.combine(analysis.date_end, datetime.max.time())
-    return (
-        db.query(Trade)
-        .filter(
-            Trade.user_id == user_id,
-            Trade.datetime >= start_dt,
-            Trade.datetime <= end_dt,
-        )
-        .order_by(Trade.datetime)
-        .all()
-    )
 
 
 def _build_analysis_data(trades, positions, insight_items, whatif_items) -> dict:
@@ -107,14 +79,23 @@ async def generate_report(
     db: Session = Depends(get_db),
 ):
     """Run full pipeline, build AI prompt, call LLM, validate, save report."""
-    analysis = _load_analysis(body.analysis_id, current_user.id, db)
-    trades = _load_trades(analysis, current_user.id, db)
+    analysis = load_analysis(body.analysis_id, current_user.id, db)
+    trades = load_trades(analysis, current_user.id, db)
     positions = PositionBuilder.build(trades)
 
-    # Build patterns map with confidence scores
+    # Fetch market data for pattern tagging
+    market_data = {}
+    symbols = list({p.symbol for p in positions})
+    if symbols:
+        market_data = ensure_market_data(db, symbols, analysis.date_start, analysis.date_end)
+
+    # Build patterns map with confidence scores (including market env patterns)
     patterns_map: dict[int, list[tuple[str, float]]] = {}
     for i, pos in enumerate(positions):
         results = PatternEngine.tag_position(pos, positions)
+        if market_data:
+            results.extend(PatternEngine.tag_market_patterns(pos, market_data))
+            results = PatternEngine.resolve_hierarchy(results)
         patterns_map[i] = [(r.pattern_name, r.confidence) for r in results]
 
     # Resolve primary pattern per position for insight PnL attribution

@@ -77,6 +77,8 @@ class StatsResponse(BaseModel):
     profit_capture_ratio: float = 0.0
     # V1.3 Expectancy
     expectancy: float = 0.0
+    # V3.1 Small sample indicator
+    is_small_sample: bool = False
 
 
 class InsightPatternItem(BaseModel):

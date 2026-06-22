@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.jwt import get_current_user
+from app.api.common import load_analysis, load_trades
 from app.database import get_db
 from app.models.analysis import Analysis
 from app.models.trade import Trade
 from app.models.user import User
+from app.models.raw_file import RawFile
 from app.engine.attribution import shapley_attribution
 from app.engine.insight import InsightEngine, InsightItem
 from app.engine.mae import compute_mae_mfe_stats
@@ -75,6 +77,15 @@ def run_analysis(
     db: Session = Depends(get_db),
 ):
     """Create an analysis record for the given date range + uploaded file."""
+    # Validate raw_file belongs to current user if provided
+    if body.raw_file_id:
+        raw_file = db.query(RawFile).filter(
+            RawFile.id == body.raw_file_id,
+            RawFile.user_id == current_user.id
+        ).first()
+        if not raw_file:
+            raise HTTPException(status_code=404, detail="Raw file not found or not owned by user")
+
     analysis = Analysis(
         user_id=current_user.id,
         date_start=body.date_start,
@@ -87,43 +98,9 @@ def run_analysis(
     return AnalysisRunResponse(analysis_id=analysis.id, filename=body.filename or "")
 
 
-def _load_analysis(analysis_id: str, user_id: str, db: Session) -> Analysis:
-    """Load analysis, raise 404 if not found or not owned by user."""
-    analysis = (
-        db.query(Analysis)
-        .filter(Analysis.id == analysis_id, Analysis.user_id == user_id)
-        .first()
-    )
-    if not analysis:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    return analysis
-
-
-def _load_trades(
-    analysis: Analysis, user_id: str, db: Session
-) -> list[Trade]:
-    """Load the trades that belong to THIS analysis.
-
-    An analysis is bound to exactly one uploaded raw file (Upload flow always
-    passes raw_file_id). Loading by user_id + date range instead is wrong: if a
-    user re-uploads an already-imported statement (or uploads several whose
-    dates overlap), the overlapping trades get double-counted and silently
-    corrupt PnL/win-rate. So the analysis's data boundary is its raw_file_id,
-    not the user's entire history within a date window.
-    """
-    if not analysis.raw_file_id:
-        # Defensive: an analysis without a raw file has no trades to analyze.
-        return []
-    return (
-        db.query(Trade)
-        .filter(
-            Trade.raw_file_id == analysis.raw_file_id,
-            Trade.user_id == user_id,
-            Trade.is_deleted == False,
-        )
-        .order_by(Trade.datetime)
-        .all()
-    )
+# Backward compatibility aliases
+_load_analysis = load_analysis
+_load_trades = load_trades
 
 
 def _compute_consecutive_losses(positions) -> int:
@@ -157,7 +134,6 @@ def get_stats(
     # Look up filename from linked RawFile
     analysis_filename = ""
     if analysis.raw_file_id:
-        from app.models.raw_file import RawFile
         rf = db.query(RawFile).filter(RawFile.id == analysis.raw_file_id).first()
         if rf:
             analysis_filename = rf.filename
@@ -171,6 +147,7 @@ def get_stats(
     # Use only valid positions (cost_known == True) for all KPIs
     valid_positions = [p for p in positions if getattr(p, "cost_known", True)]
     valid_count = len(valid_positions)
+    is_small_sample = valid_count < 5
 
     win_count = sum(1 for p in valid_positions if p.pnl > 0)
     win_rate = (win_count / valid_count) if valid_count > 0 else 0.0
@@ -280,12 +257,18 @@ def get_stats(
     # Expectancy (V1.3)
     total_expectancy = 0.0
     if valid_count > 0:
-        total_expectancy = InsightItem.compute(valid_positions, "overall")
+        total_expectancy = InsightItem.compute(valid_positions)
 
     # --- Outcome distribution ---
 
-    # Auto-save snapshot on first view (V3.0)
+    # Auto-save snapshot on first view or when raw_file_id changes (V3.0 + V3.1 update)
+    snapshot_needs_update = False
     if not analysis.stats_snapshot:
+        snapshot_needs_update = True
+    elif analysis.stats_snapshot.get("snapshot_raw_file_id") != analysis.raw_file_id:
+        snapshot_needs_update = True
+
+    if snapshot_needs_update:
         analysis.stats_snapshot = {
             "total_trades": total_trades,
             "total_positions": total_positions,
@@ -297,6 +280,7 @@ def get_stats(
             "profit_factor": round(profit_factor, 2) if profit_factor is not None else None,
             "max_drawdown_pct": round(max_drawdown_pct, 4),
             "avg_holding_days": round(avg_holding_days, 1),
+            "snapshot_raw_file_id": analysis.raw_file_id,
         }
         db.commit()
 
@@ -339,6 +323,8 @@ def get_stats(
         profit_capture_ratio=round(mae_mfe_stats.get("profit_capture_ratio", 0.0), 4),
         # V1.3 Expectancy
         expectancy=round(total_expectancy, 2),
+        # V3.1 Small sample indicator
+        is_small_sample=is_small_sample,
     )
 
 
@@ -438,7 +424,7 @@ def get_insight(
 
     # V2.3: baseline expectancy (overall) for behavior evaluation
     valid_positions = [p for i, p in enumerate(positions) if getattr(p, "cost_known", True)]
-    baseline_expectancy = InsightItem.compute(valid_positions, "overall") if valid_positions else 0.0
+    baseline_expectancy = InsightItem.compute(valid_positions) if valid_positions else 0.0
 
     significant = [p for p in all_items if p.count >= 5]
     best = significant[0] if significant else None

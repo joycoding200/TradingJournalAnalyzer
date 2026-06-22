@@ -114,9 +114,9 @@ class BaseParser(ABC):
 
     @staticmethod
     def _read_df(content: bytes, filename: str) -> pd.DataFrame:
-        if filename.endswith(".csv"):
+        if filename.lower().endswith(".csv"):
             return BaseParser._strip_formula_strings(BaseParser._read_delimited(content))
-        elif filename.endswith((".xls", ".xlsx")):
+        elif filename.lower().endswith((".xls", ".xlsx")):
             # Try as a real Excel workbook first.
             try:
                 for header_row in range(4):

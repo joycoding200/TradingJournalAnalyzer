@@ -9,6 +9,7 @@ Usage:
     data = ensure_market_data(db, ["600036", "000858"], start, end)
 """
 
+import logging
 import threading
 from datetime import date, datetime, timedelta
 
@@ -16,6 +17,8 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.engine.market_data import MarketDataCache
+
+logger = logging.getLogger(__name__)
 
 # Module-level client — TCP connection reused across symbols
 _CLIENT = None
@@ -82,7 +85,10 @@ def _fetch_single_symbol_inner(db: Session, symbol: str) -> int:
                 start=start,
                 offset=_PAGE_SIZE,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"mootdx bars() failed for {symbol} at offset {start}: {e}")
+            global _CLIENT
+            _CLIENT = None  # force reconnect on next call
             break
 
         if chunk is None or chunk.empty:
@@ -125,7 +131,8 @@ def _fetch_single_symbol_inner(db: Session, symbol: str) -> int:
             db, symbol, raw["date"].min(), raw["date"].max()
         )
         existing_dates = {date.fromisoformat(b["date"]) for b in bars}
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to check existing bars for {symbol}: {e}")
         pass
 
     new_rows = [

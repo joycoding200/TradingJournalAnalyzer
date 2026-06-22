@@ -440,7 +440,7 @@ class TestChaseTag:
         dates = [f"2024-01-{d:02d}" for d in range(2, 27)]  # 2..26 = 25 days
         closes = [10.0] * 24 + [11.6]  # entry day (idx 24) close = 11.6 >= +16%
         pos = make_pos(entry_date=date(2024, 1, 26))
-        md = _make_market_data(dates, closes)
+        md = _make_market_data(dates, closes, ma20=10.0)  # ma20=10 so 11.6 > 10*1.10=11.0
         assert "CHASE" in _market_tags(pos, md)
 
     def test_not_chase_when_flat(self):
@@ -617,7 +617,7 @@ class TestTrendTag:
             ma20=11.0,
             ma60=10.0,
         )
-        assert "TREND" in _market_tags(pos, md)
+        assert "BULL_TREND" in _market_tags(pos, md)
 
     def test_not_trend_when_ma20_below_ma60(self):
         pos = make_pos(entry_date=date(2024, 1, 15))
@@ -627,7 +627,7 @@ class TestTrendTag:
             ma20=10.0,
             ma60=11.0,
         )
-        assert "TREND" not in _market_tags(pos, md)
+        assert "BULL_TREND" not in _market_tags(pos, md)
 
     def test_not_trend_when_price_below_ma20(self):
         """ma20 > ma60 but price below ma20 -> no TREND."""
@@ -640,7 +640,7 @@ class TestTrendTag:
             ma20=ma20,
             ma60=10.0,
         )
-        assert "TREND" not in _market_tags(pos, md)
+        assert "BULL_TREND" not in _market_tags(pos, md)
 
 
 class TestCounterTrendTag:
@@ -655,7 +655,7 @@ class TestCounterTrendTag:
             ma20=10.0,
             ma60=11.0,
         )
-        assert "COUNTER_TREND" in _market_tags(pos, md)
+        assert "BEAR_TREND" in _market_tags(pos, md)
 
     def test_not_counter_trend_when_ma20_above_ma60(self):
         pos = make_pos(entry_date=date(2024, 1, 15))
@@ -665,7 +665,7 @@ class TestCounterTrendTag:
             ma20=11.0,
             ma60=10.0,
         )
-        assert "COUNTER_TREND" not in _market_tags(pos, md)
+        assert "BEAR_TREND" not in _market_tags(pos, md)
 
     def test_not_counter_trend_when_price_above_ma20(self):
         """ma20 < ma60 but price above ma20 -> no COUNTER_TREND."""
@@ -678,7 +678,7 @@ class TestCounterTrendTag:
             ma20=10.0,
             ma60=11.0,
         )
-        assert "COUNTER_TREND" not in _market_tags(pos, md)
+        assert "BEAR_TREND" not in _market_tags(pos, md)
 
 
 class TestBreakdownTag:
@@ -834,62 +834,62 @@ class TestResolveHierarchy:
 
     def test_trend_with_breakout_sets_sub_pattern(self):
         tags = [
-            PatternResult("TREND", 0.7, {"ma20": 11, "ma60": 10}),
+            PatternResult("BULL_TREND", 0.7, {"ma20": 11, "ma60": 10}),
             PatternResult("BREAKOUT", 0.7, {}),
             PatternResult("SWING", 1.0, {"holding_days": 8}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
-        trend = next(t for t in result if t.pattern_name == "TREND")
+        trend = next(t for t in result if t.pattern_name == "BULL_TREND")
         assert trend.context.get("sub_pattern") == "BREAKOUT"
 
     def test_trend_with_chase_sets_sub_pattern(self):
         tags = [
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("CHASE", 0.7, {}),
             PatternResult("SWING", 1.0, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
-        trend = next(t for t in result if t.pattern_name == "TREND")
+        trend = next(t for t in result if t.pattern_name == "BULL_TREND")
         assert trend.context.get("sub_pattern") == "CHASE"
 
     def test_trend_breakout_preferred_over_chase(self):
         """BREAKOUT appears first in the hierarchy check, so it wins."""
         tags = [
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("BREAKOUT", 0.7, {}),
             PatternResult("CHASE", 0.7, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
-        trend = next(t for t in result if t.pattern_name == "TREND")
+        trend = next(t for t in result if t.pattern_name == "BULL_TREND")
         assert trend.context.get("sub_pattern") == "BREAKOUT"
 
     def test_counter_trend_with_bottom(self):
         tags = [
-            PatternResult("COUNTER_TREND", 0.7, {}),
+            PatternResult("BEAR_TREND", 0.7, {}),
             PatternResult("BOTTOM", 0.7, {}),
             PatternResult("SWING", 1.0, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
-        ct = next(t for t in result if t.pattern_name == "COUNTER_TREND")
+        ct = next(t for t in result if t.pattern_name == "BEAR_TREND")
         assert ct.context.get("sub_pattern") == "BOTTOM"
 
     def test_counter_trend_with_breakdown(self):
         tags = [
-            PatternResult("COUNTER_TREND", 0.7, {}),
+            PatternResult("BEAR_TREND", 0.7, {}),
             PatternResult("BREAKDOWN", 0.7, {}),
             PatternResult("POSITION", 1.0, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
-        ct = next(t for t in result if t.pattern_name == "COUNTER_TREND")
+        ct = next(t for t in result if t.pattern_name == "BEAR_TREND")
         assert ct.context.get("sub_pattern") == "BREAKDOWN"
 
     def test_no_hierarchy_change_when_no_related_tags(self):
         tags = [
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("SWING", 1.0, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
-        trend = next(t for t in result if t.pattern_name == "TREND")
+        trend = next(t for t in result if t.pattern_name == "BULL_TREND")
         assert "sub_pattern" not in trend.context
 
     def test_no_hierarchy_for_unrelated_tags(self):
@@ -903,28 +903,28 @@ class TestResolveHierarchy:
     def test_multiple_trend_tags_all_get_sub_pattern(self):
         """If multiple positions have TREND, all should get sub_pattern."""
         tags = [
-            PatternResult("TREND", 0.7, {}),
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("BREAKOUT", 0.7, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
         for t in result:
-            if t.pattern_name == "TREND":
+            if t.pattern_name == "BULL_TREND":
                 assert t.context.get("sub_pattern") == "BREAKOUT"
 
     def test_double_hierarchy(self):
         """TREND+COUNTER_TREND both get their sub_patterns independently."""
         tags = [
-            PatternResult("TREND", 0.7, {}),
-            PatternResult("COUNTER_TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
+            PatternResult("BEAR_TREND", 0.7, {}),
             PatternResult("BREAKOUT", 0.7, {}),
             PatternResult("BOTTOM", 0.7, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
         for t in result:
-            if t.pattern_name == "TREND":
+            if t.pattern_name == "BULL_TREND":
                 assert t.context.get("sub_pattern") == "BREAKOUT"
-            if t.pattern_name == "COUNTER_TREND":
+            if t.pattern_name == "BEAR_TREND":
                 assert t.context.get("sub_pattern") == "BOTTOM"
 
 
@@ -953,7 +953,7 @@ class TestDetectPsychologicalPatterns:
         ]
         positions[2].total_quantity = 200  # larger than prior (100)
         results = PatternEngine.detect_psychological_patterns(positions)
-        names = {r.pattern_name for r in results}
+        names = {r[1].pattern_name for r in results}
         assert "POSSIBLE_REVENGE" in names
 
     def test_overtrading_detected(self):
@@ -971,7 +971,7 @@ class TestDetectPsychologicalPatterns:
                 entry_date=date(2024, 1, 23), exit_date=date(2024, 1, 24)))
         # total: 20 + 6 = 26 positions, 21 distinct dates
         results = PatternEngine.detect_psychological_patterns(positions)
-        names = {r.pattern_name for r in results}
+        names = {r[1].pattern_name for r in results}
         assert "OVERTRADING" in names
 
     def test_hold_loser_detected(self):
@@ -992,7 +992,7 @@ class TestDetectPsychologicalPatterns:
         # 12 > 2 * 1.5 = 3 ✓
         # The last loser (holding_days=14) > 12 ✓
         results = PatternEngine.detect_psychological_patterns(positions)
-        names = {r.pattern_name for r in results}
+        names = {r[1].pattern_name for r in results}
         assert "HOLD_LOSER" in names
 
     def test_cut_winner_detected(self):
@@ -1015,7 +1015,7 @@ class TestDetectPsychologicalPatterns:
         # Need a winner with holding_days < median_hold_winners
         # Let me adjust: 5 winners [1,1,2,2,3] -> median = 2
         results = PatternEngine.detect_psychological_patterns(positions)
-        names = {r.pattern_name for r in results}
+        names = {r[1].pattern_name for r in results}
         assert "CUT_WINNER" in names
 
     def test_all_psychological_tags_have_low_confidence(self):
@@ -1038,7 +1038,7 @@ class TestDetectPsychologicalPatterns:
                                       exit_date=date(2024, 2, 2 + i)))
         results = PatternEngine.detect_psychological_patterns(positions)
         for r in results:
-            assert r.confidence <= 0.5, f"{r.pattern_name} has confidence {r.confidence} > 0.5"
+            assert r[1].confidence <= 0.5, f"{r[1].pattern_name} has confidence {r[1].confidence} > 0.5"
 
     def test_psy_fomo_has_lower_confidence(self):
         """PSY_FOMO from detect_psychological_patterns has confidence 0.3."""
@@ -1059,8 +1059,8 @@ class TestDetectPsychologicalPatterns:
         # First position has 3+ buy trades with increasing prices to trigger PSY_FOMO
         results = PatternEngine.detect_psychological_patterns(positions, all_trades=trades)
         for r in results:
-            if r.pattern_name == "PSY_FOMO":
-                assert r.confidence == 0.3
+            if r[1].pattern_name == "PSY_FOMO":
+                assert r[1].confidence == 0.3
 
     def test_possible_revenge_confidence(self):
         """POSSIBLE_REVENGE from detect_psychological_patterns has confidence 0.3."""
@@ -1075,8 +1075,8 @@ class TestDetectPsychologicalPatterns:
         positions[2].total_quantity = 200
         results = PatternEngine.detect_psychological_patterns(positions)
         for r in results:
-            if r.pattern_name == "POSSIBLE_REVENGE":
-                assert r.confidence == 0.3
+            if r[1].pattern_name == "POSSIBLE_REVENGE":
+                assert r[1].confidence == 0.3
 
 
 # ============================================================================
@@ -1091,11 +1091,12 @@ class TestCategoryField:
         """CATEGORY_MAP covers all behavioral pattern names."""
         expected = {
             "CHASE", "BOTTOM", "BREAKOUT",
-            "TREND", "COUNTER_TREND", "BREAKDOWN",
+            "BULL_TREND", "BEAR_TREND", "BREAKDOWN",
             "SCALP", "SWING", "POSITION",
             "PYRAMID", "AVERAGE_DOWN", "TURN",
             "TIGHT_STOP", "TRAILING_STOP", "TIME_EXIT", "LARGE_LOSS_EXIT",
             "FOMO",
+            "POSSIBLE_REVENGE", "OVERTRADING", "HOLD_LOSER", "CUT_WINNER", "PSY_FOMO",
         }
         assert set(PatternEngine.CATEGORY_MAP.keys()) == expected
 
@@ -1107,17 +1108,17 @@ class TestCategoryField:
         ]
         result = PatternEngine.resolve_per_category(tags)
         result_by_name = {r.pattern_name: r for r in result}
-        # CHASE (entry, 0.5) and FOMO (entry, 0.7) -> FOMO wins
-        assert "FOMO" in result_by_name
+        # CHASE, FOMO, SWING all in behavior -> SWING (1.0) wins
+        assert "SWING" in result_by_name
         assert "CHASE" not in result_by_name
-        assert result_by_name["FOMO"].category == "entry"
-        assert result_by_name["SWING"].category == "holding"
+        assert "FOMO" not in result_by_name
+        assert result_by_name["SWING"].category == "behavior"
 
     def test_resolve_per_category_different_categories_all_kept(self):
         tags = [
-            PatternResult("BREAKOUT", 0.7, {}),  # entry
-            PatternResult("SWING", 1.0, {}),      # holding
-            PatternResult("PYRAMID", 0.8, {}),    # risk
+            PatternResult("BULL_TREND", 0.7, {}),   # market_env
+            PatternResult("SWING", 1.0, {}),          # behavior
+            PatternResult("TIGHT_STOP", 0.8, {}),     # outcome
         ]
         result = PatternEngine.resolve_per_category(tags)
         assert len(result) == 3
@@ -1128,19 +1129,20 @@ class TestCategoryField:
     def test_resolve_per_category_same_category_only_highest(self):
         """Only the highest confidence tag per category survives."""
         tags = [
-            PatternResult("SCALP", 1.0, {}),    # holding
-            PatternResult("SWING", 0.8, {}),    # holding
-            PatternResult("POSITION", 0.6, {}), # holding
+            PatternResult("SCALP", 1.0, {}),    # behavior
+            PatternResult("SWING", 0.8, {}),    # behavior
+            PatternResult("POSITION", 0.6, {}), # behavior
         ]
         result = PatternEngine.resolve_per_category(tags)
         assert len(result) == 1
         assert result[0].pattern_name == "SCALP"
-        assert result[0].category == "holding"
+        assert result[0].category == "behavior"
 
-    def test_psychological_tags_not_in_category_map(self):
-        """PSY_FOMO, POSSIBLE_REVENGE, OVERTRADING must NOT be in CATEGORY_MAP."""
+    def test_psychological_tags_in_category_map(self):
+        """Psychological tags ARE in CATEGORY_MAP under 'psychology' dimension."""
         for tag in ("PSY_FOMO", "POSSIBLE_REVENGE", "OVERTRADING"):
-            assert tag not in PatternEngine.CATEGORY_MAP
+            assert tag in PatternEngine.CATEGORY_MAP
+            assert PatternEngine.CATEGORY_MAP[tag] == "psychology"
 
 
 # ============================================================================
@@ -1153,7 +1155,7 @@ class TestResolveHierarchyDedup:
 
     def test_chase_removed_when_breakout_present(self):
         tags = [
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("BREAKOUT", 0.7, {}),
             PatternResult("CHASE", 0.5, {}),
         ]
@@ -1165,7 +1167,7 @@ class TestResolveHierarchyDedup:
     def test_chase_kept_when_breakout_absent(self):
         """CHASE should remain if no BREAKOUT is present."""
         tags = [
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("CHASE", 0.5, {}),
         ]
         result = PatternEngine.resolve_hierarchy(tags)
@@ -1175,7 +1177,7 @@ class TestResolveHierarchyDedup:
     def test_trend_breakout_preferred_over_chase_removes_chase(self):
         """BREAKOUT removes CHASE; TREND gets sub_pattern=BREAKOUT."""
         tags = [
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("BREAKOUT", 0.7, {}),
             PatternResult("CHASE", 0.5, {}),
         ]
@@ -1183,12 +1185,12 @@ class TestResolveHierarchyDedup:
         names = {t.pattern_name for t in result}
         assert "CHASE" not in names
         assert "BREAKOUT" in names
-        trend = next(t for t in result if t.pattern_name == "TREND")
+        trend = next(t for t in result if t.pattern_name == "BULL_TREND")
         assert trend.context.get("sub_pattern") == "BREAKOUT"
 
     def test_chase_removed_but_other_tags_kept(self):
         tags = [
-            PatternResult("TREND", 0.7, {}),
+            PatternResult("BULL_TREND", 0.7, {}),
             PatternResult("BREAKOUT", 0.7, {}),
             PatternResult("CHASE", 0.5, {}),
             PatternResult("SWING", 1.0, {}),
@@ -1197,7 +1199,7 @@ class TestResolveHierarchyDedup:
         names = {t.pattern_name for t in result}
         assert "BREAKOUT" in names
         assert "CHASE" not in names
-        assert "TREND" in names
+        assert "BULL_TREND" in names
         assert "SWING" in names
 
 

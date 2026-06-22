@@ -68,17 +68,24 @@ class MarketDataCache:
 
     @staticmethod
     def store_bars(db: Session, bars: list[dict]) -> int:
-        """Store daily bars, skipping duplicates. Returns count of stored bars."""
+        """Store daily bars, skipping duplicates using UNIQUE constraint. Returns count of stored bars."""
+        if not bars:
+            return 0
+
+        # First get existing dates in bulk
+        symbol = bars[0]["symbol"]
+        dates = [b["date"] for b in bars]
+        existing = set(
+            db.query(DailyBar.date)
+            .filter(DailyBar.symbol == symbol, DailyBar.date.in_(dates))
+            .all()
+        )
+        existing_dates = {d[0] for d in existing}
+
+        # Insert only new bars
         count = 0
         for b in bars:
-            existing = (
-                db.query(DailyBar)
-                .filter(
-                    DailyBar.symbol == b["symbol"], DailyBar.date == b["date"]
-                )
-                .first()
-            )
-            if not existing:
+            if b["date"] not in existing_dates:
                 db.add(
                     DailyBar(
                         symbol=b["symbol"],

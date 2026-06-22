@@ -9,7 +9,10 @@ Works with virtually any broker's CSV/Excel export without configuration.
 """
 
 import re
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 
@@ -234,7 +237,8 @@ class SmartParser(BaseParser):
                 return 0.0
             # We can parse anything with >= 3 columns and >= 1 row
             return 0.75
-        except Exception:
+        except Exception as e:
+            logger.warning(f"SmartParser detect failed for {filename}: {e}")
             return 0.0
 
     @classmethod
@@ -309,6 +313,8 @@ class SmartParser(BaseParser):
                 return []
 
         trades: list[TradeData] = []
+        skipped = 0
+        total = len(df)
         for _, row in df.iterrows():
             try:
                 symbol = str(row[symbol_col]).strip().replace("'", "").replace('"', '')
@@ -318,19 +324,33 @@ class SmartParser(BaseParser):
                     symbol = symbol.zfill(6)
                     exchange = _get_exchange(symbol)
 
-                raw_dir = str(row[direction_col]).strip().upper()
-                if raw_dir in _DIRECTION_BUY or "买" in str(row[direction_col]) or "开" in str(row[direction_col]):
+                raw_dir = str(row[direction_col]).strip()
+                raw_dir_upper = raw_dir.upper()
+                dir_str = str(row[direction_col])
+
+                # First check exact set matches
+                if raw_dir_upper in _DIRECTION_BUY:
                     side = "BUY"
-                elif raw_dir in _DIRECTION_SELL or "卖" in str(row[direction_col]) or "平" in str(row[direction_col]):
+                elif raw_dir_upper in _DIRECTION_SELL:
                     side = "SELL"
                 else:
-                    side = "BUY"  # default
+                    # Then check for meaningful substrings (avoid single "开"/"平" that could be part of either)
+                    has_buy = "买入" in dir_str or "买" in dir_str
+                    has_sell = "卖出" in dir_str or "卖" in dir_str
+                    has_open = "开仓" in dir_str
+                    has_close = "平仓" in dir_str
+
+                    if has_buy or (has_open and not has_sell and not has_close):
+                        side = "BUY"
+                    elif has_sell or (has_close and not has_buy and not has_open):
+                        side = "SELL"
+                    else:
+                        # Can't determine direction reliably, skip this row
+                        skipped += 1
+                        continue
 
                 qty = float(row[qty_col])
                 price = float(row[price_col])
-                # Distinguish stock quantity (shares) from futures (lots): if price * qty ≈ amount column, it's lots
-                if not is_future and qty < 100:
-                    is_future = True  # Small qty with high price → likely futures lots
 
                 if is_future:
                     exchange = _get_futures_exchange_smart(symbol)
@@ -365,6 +385,11 @@ class SmartParser(BaseParser):
                     asset_type="future" if is_future else "stock",
                 ))
             except (ValueError, KeyError, TypeError):
+                skipped += 1
                 continue
+
+        # Warn if >5% rows were skipped
+        if total > 0 and skipped / total > 0.05:
+            logger.warning(f"SmartParser skipped {skipped}/{total} rows ({skipped/total:.1%}) for {filename}")
 
         return trades

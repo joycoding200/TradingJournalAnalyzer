@@ -13,7 +13,7 @@ def test_register_and_login(client):
 
     resp = client.post(
         "/api/auth/login",
-        json={"email": "test@example.com", "password": "secret123"},
+        json={"account": "test@example.com", "password": "secret123"},
     )
     assert resp.status_code == 200
     assert "access_token" in resp.json()
@@ -38,7 +38,7 @@ def test_login_wrong_password(client):
     )
     resp = client.post(
         "/api/auth/login",
-        json={"email": "wrong@example.com", "password": "badpass"},
+        json={"account": "wrong@example.com", "password": "badpass"},
     )
     assert resp.status_code == 401
 

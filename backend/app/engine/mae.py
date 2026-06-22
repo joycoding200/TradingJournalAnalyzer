@@ -105,7 +105,7 @@ def compute_mae_mfe_stats(positions: list, market_data: dict) -> dict:
     # bias where one trade with huge MFE dominates the aggregate.
     captures = [
         r["pnl_pct"] / r["mfe_pct"]
-        for r in winners if r["mfe_pct"] > 0
+        for r in winners if r["mfe_pct"] > 0.001  # filter out negligible MFE to avoid distortion
     ]
     profit_capture = sum(captures) / len(captures) if captures else 0.0
 

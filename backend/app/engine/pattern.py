@@ -198,12 +198,12 @@ class PatternEngine:
 
                     # AVERAGE_DOWN: buying at lower price WHILE in a loss position
                     if last_buy_price < first_buy_price * 0.95:
-                        # Verify the prior position was in a loss state at time of add
+                        # Verify the prior position was in a loss state at time of add by checking prices
                         is_loss_add = False
                         for prev_pos in all_positions:
                             if (prev_pos.symbol == pos.symbol
                                     and prev_pos.entry_date <= last_buy_date <= prev_pos.exit_date
-                                    and prev_pos.pnl < 0):
+                                    and last_buy_price < prev_pos.avg_entry_price):
                                 is_loss_add = True
                                 break
                         if is_loss_add:
@@ -426,17 +426,18 @@ class PatternEngine:
                     ]
                     max_high = max(prev_highs)
                     has_high_proximity = entry_close >= max_high * 0.97
-                confidence = 0.7 if (has_ma_deviation and has_high_proximity) else 0.5
-                tags.append(
-                    PatternResult(
-                        "CHASE",
-                        confidence,
-                        {
-                            "change_pct": round(chg, 4),
-                            "from_date": d5,
-                        },
+                # Only tag CHASE if both conditions are met (per FINANCE_DOMAIN.md)
+                if has_ma_deviation and has_high_proximity:
+                    tags.append(
+                        PatternResult(
+                            "CHASE",
+                            0.7,
+                            {
+                                "change_pct": round(chg, 4),
+                                "from_date": d5,
+                            },
+                        )
                     )
-                )
 
         # -- FOMO: entry near day's high after streak of up days -------
         if entry_idx >= 5:
