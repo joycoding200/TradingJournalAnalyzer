@@ -3,7 +3,7 @@
 # 用法: bash restart.sh
 # 默认端口: 后端 8001, 前端 5173
 
-BACKEND_PORT=8001
+BACKEND_PORT=8000
 FRONTEND_PORT=5173
 ROOT="/d/Dev/Projects/TradingJournalAnalyzer"
 
