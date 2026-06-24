@@ -1,8 +1,8 @@
 """Pattern engine for tagging positions with behavioral labels.
 
 Produces behavior tags across four dimensions:
-  Dimension 1 - market_env:  market state at entry (BULL_TREND, BEAR_TREND, BREAKDOWN)
-  Dimension 2 - behavior:    what the trader did (CHASE, BOTTOM, BREAKOUT, PYRAMID,
+  Dimension 1 - market_env:  market state at entry (BULL_TREND, BEAR_TREND, SIDEWAYS, BREAKOUT, BREAKDOWN)
+  Dimension 2 - behavior:    what the trader did (CHASE, BOTTOM, PYRAMID,
                              AVERAGE_DOWN, TURN, SCALP, SWING, POSITION, FOMO)
   Dimension 3 - outcome:     how the trade ended (TIGHT_STOP, LARGE_LOSS_EXIT,
                              TIME_EXIT, TRAILING_STOP)
@@ -56,12 +56,13 @@ class PatternEngine:
         # --- market_env: 市场环境 (入场所处的技术环境) ---
         "BULL_TREND": "market_env",
         "BEAR_TREND": "market_env",
+        "SIDEWAYS": "market_env",
+        "BREAKOUT": "market_env",
         "BREAKDOWN": "market_env",
 
         # --- behavior: 交易行为 (交易者主动采取的动作) ---
         "CHASE": "behavior",
         "BOTTOM": "behavior",
-        "BREAKOUT": "behavior",
         "PYRAMID": "behavior",
         "AVERAGE_DOWN": "behavior",
         "TURN": "behavior",
@@ -575,6 +576,21 @@ class PatternEngine:
             "BEAR_TREND",
             lambda ma20, ma60: ma20 < ma60 and entry_close < ma20,
         )
+
+        # -- SIDEWAYS: MA data available but no clear trend direction --
+        ma20 = entry_data.get("ma20")
+        ma60 = entry_data.get("ma60")
+        if ma20 is not None and ma60 is not None:
+            is_bull = ma20 > ma60 and entry_close > ma20
+            is_bear = ma20 < ma60 and entry_close < ma20
+            if not is_bull and not is_bear:
+                tags.append(
+                    PatternResult(
+                        "SIDEWAYS",
+                        0.6,
+                        {"ma20": ma20, "ma60": ma60},
+                    )
+                )
 
         # -- BREAKDOWN: exit close < min(prev 20d low) -----------------
         if exit_data and exit_str in dates:

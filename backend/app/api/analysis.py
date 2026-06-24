@@ -45,11 +45,12 @@ PATTERN_MODULES: dict[str, str] = {
     # market_env — 市场环境
     "BULL_TREND": "market_env",
     "BEAR_TREND": "market_env",
+    "SIDEWAYS": "market_env",
+    "BREAKOUT": "market_env",
     "BREAKDOWN": "market_env",
     # behavior — 交易行为
     "CHASE": "behavior",
     "BOTTOM": "behavior",
-    "BREAKOUT": "behavior",
     "PYRAMID": "behavior",
     "AVERAGE_DOWN": "behavior",
     "TURN": "behavior",
@@ -578,7 +579,7 @@ def get_insight(
     cross_data: dict[tuple[str, str], dict] = {}
     for i in valid_indices:
         cat = category_map.get(i, {})
-        env = cat.get("market_env", "未标记")
+        env = cat.get("market_env", "SIDEWAYS")
         beh = cat.get("behavior", "未标记")
         key = (env, beh)
         p = positions[i]

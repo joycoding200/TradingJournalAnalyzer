@@ -17,11 +17,12 @@ export const PATTERN_LABELS: Record<string, string> = {
   // 市场环境
   BULL_TREND: "牛市环境",
   BEAR_TREND: "熊市环境",
-  BREAKDOWN: "破位",
+  SIDEWAYS: "震荡市",
+  BREAKOUT: "向上突破",
+  BREAKDOWN: "向下破位",
   // 交易行为
   CHASE: "追涨",
   BOTTOM: "抄底",
-  BREAKOUT: "突破",
   PYRAMID: "加仓",
   AVERAGE_DOWN: "补仓",
   TURN: "做T",
@@ -44,7 +45,7 @@ export const PATTERN_LABELS: Record<string, string> = {
 
 export const PATTERN_MODULES: Record<string, string> = {
   // market_env
-  BULL_TREND: "market_env", BEAR_TREND: "market_env", BREAKDOWN: "market_env",
+  BULL_TREND: "market_env", BEAR_TREND: "market_env", SIDEWAYS: "market_env", BREAKDOWN: "market_env",
   // behavior
   CHASE: "behavior", BOTTOM: "behavior", BREAKOUT: "behavior",
   PYRAMID: "behavior", AVERAGE_DOWN: "behavior", TURN: "behavior",

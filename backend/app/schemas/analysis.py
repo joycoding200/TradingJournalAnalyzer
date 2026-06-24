@@ -135,7 +135,7 @@ class InsightPatternItem(BaseModel):
 
 class CrossAnalysisItem(BaseModel):
     """Cross-dimension analysis: market_env × behavior combination stats."""
-    market_env: str   # BULL_TREND / BEAR_TREND / BREAKDOWN / "未标记"
+    market_env: str   # BULL_TREND / BEAR_TREND / SIDEWAYS / BREAKDOWN
     behavior: str     # CHASE / SCALP / SWING / ...
     count: int
     win_count: int

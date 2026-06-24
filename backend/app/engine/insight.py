@@ -79,10 +79,10 @@ class InsightEngine:
         """Map pattern name to its dimension for priority resolution."""
         if name in ("TIGHT_STOP", "TRAILING_STOP", "TIME_EXIT", "LARGE_LOSS_EXIT"):
             return "outcome"
-        if name in ("CHASE", "BOTTOM", "BREAKOUT", "PYRAMID", "AVERAGE_DOWN",
+        if name in ("CHASE", "BOTTOM", "PYRAMID", "AVERAGE_DOWN",
                     "TURN", "SCALP", "SWING", "POSITION", "FOMO"):
             return "behavior"
-        if name in ("BULL_TREND", "BEAR_TREND", "BREAKDOWN"):
+        if name in ("BULL_TREND", "BEAR_TREND", "SIDEWAYS", "BREAKOUT", "BREAKDOWN"):
             return "market_env"
         if name in ("POSSIBLE_REVENGE", "OVERTRADING", "HOLD_LOSER", "CUT_WINNER", "PSY_FOMO"):
             return "psychology"
