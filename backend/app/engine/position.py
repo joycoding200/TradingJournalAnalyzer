@@ -87,6 +87,7 @@ class PositionBuilder:
                 total_cost = 0.0
                 total_qty = 0.0
                 total_buy_comm = 0.0  # Accumulated buy-side fees
+                entry_batches = 0  # How many distinct buy lots were matched
                 entry_date: date | None = None
 
                 while remaining > 0 and long_queue:
@@ -100,6 +101,7 @@ class PositionBuilder:
                     total_qty += matched
                     sell_trade_ids.append(buy_id)
                     remaining -= matched
+                    entry_batches += 1
 
                     if matched >= buy_qty:
                         long_queue.popleft()
@@ -166,6 +168,9 @@ class PositionBuilder:
                             trade_ids=sell_trade_ids,
                             cost_known=True,
                             total_commission=round(total_buy_comm + sell_comm, 2),
+                            entry_count=entry_batches,
+                            total_buys=total_qty,
+                            total_sells=total_qty,
                         )
                     )
 

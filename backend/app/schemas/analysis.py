@@ -43,6 +43,9 @@ class PositionItem(BaseModel):
     pnl: float
     pnl_pct: float
     trade_ids: list[str]
+    entry_count: int = 0
+    total_buys: float = 0.0
+    total_sells: float = 0.0
 
 
 class PnlLevelItem(BaseModel):

@@ -1,6 +1,8 @@
+import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useReport } from "../hooks/useAnalysis";
 import { downloadReport } from "../api/report";
+import { checkCaseLibraryStatus, contributeToCaseLibrary } from "../api/caseLibrary";
 import ReactMarkdown from "react-markdown";
 import { Card, Button, LoadingSpinner, EmptyState } from "../components/ui";
 import { useToast } from "../context/ToastContext";
@@ -9,6 +11,7 @@ export default function Report() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, error } = useReport(id);
   const toast = useToast();
+  const [consentState, setConsentState] = useState<"loading" | "show" | "done">("loading");
 
   const handleDownload = async () => {
     if (!id) return;
@@ -26,6 +29,42 @@ export default function Report() {
       toast.addToast("error", "下载报告失败");
     }
   };
+
+  // Check case library consent status once report data is available
+  useEffect(() => {
+    if (!data || error) return;
+    let cancelled = false;
+    checkCaseLibraryStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setConsentState(status.has_consented ? "done" : "show");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConsentState("done");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, error]);
+
+  const handleContribute = useCallback(async () => {
+    try {
+      await contributeToCaseLibrary(true, data?.analysis_id);
+    } catch {
+      // silently fail — not blocking the user
+    }
+    setConsentState("done");
+  }, [data?.analysis_id]);
+
+  const handleDecline = useCallback(async () => {
+    try {
+      await contributeToCaseLibrary(false);
+    } catch {
+      // silently fail
+    }
+    setConsentState("done");
+  }, []);
 
   if (isLoading) {
     return <LoadingSpinner text="加载报告..." />;
@@ -51,21 +90,14 @@ export default function Report() {
         <h1 className="text-xl font-semibold">交易行为诊断书</h1>
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={handleDownload}>下载报告</Button>
-          <Link to={`/analysis/${data.analysis_id}`} style={{ color: "var(--accent)" }} className="text-sm no-underline">
+          <Link to={`/analysis/${data.analysis_id}`} className="text-sm no-underline text-accent hover:underline">
             返回分析面板
           </Link>
         </div>
       </div>
 
       {data.validation_passed === false && (
-        <div
-          className="mb-6 p-4 rounded-lg text-sm"
-          style={{
-            backgroundColor: "rgba(251,191,36,0.1)",
-            border: "1px solid var(--warning)",
-            color: "var(--warning)",
-          }}
-        >
+        <div className="mb-6 rounded-lg border border-warning bg-warning/10 p-4 text-sm text-warning">
           ⚠️ 警告：数据量较少或质量较低，报告仅供参考
         </div>
       )}
@@ -75,44 +107,43 @@ export default function Report() {
           <ReactMarkdown
             components={{
               h1: ({ children, ...props }) => (
-                <h1 className="text-xl font-semibold mt-6 mb-3" style={{ color: "var(--text-primary)" }} {...props}>
+                <h1 className="mt-6 mb-3 text-xl font-semibold text-text-primary" {...props}>
                   {children}
                 </h1>
               ),
               h2: ({ children, ...props }) => (
-                <h2 className="text-lg font-semibold mt-5 mb-2" style={{ color: "var(--text-primary)" }} {...props}>
+                <h2 className="mt-5 mb-2 text-lg font-semibold text-text-primary" {...props}>
                   {children}
                 </h2>
               ),
               h3: ({ children, ...props }) => (
-                <h3 className="text-base font-semibold mt-4 mb-2" style={{ color: "var(--text-primary)" }} {...props}>
+                <h3 className="mt-4 mb-2 text-base font-semibold text-text-primary" {...props}>
                   {children}
                 </h3>
               ),
               p: ({ children, ...props }) => (
-                <p className="text-sm mb-3 leading-relaxed" style={{ color: "var(--text-primary)" }} {...props}>
+                <p className="mb-3 text-sm leading-relaxed text-text-primary" {...props}>
                   {children}
                 </p>
               ),
               ul: ({ children, ...props }) => (
-                <ul className="text-sm mb-3 pl-5 space-y-1" style={{ color: "var(--text-primary)" }} {...props}>
+                <ul className="mb-3 space-y-1 pl-5 text-sm text-text-primary" {...props}>
                   {children}
                 </ul>
               ),
               li: ({ children, ...props }) => (
-                <li className="leading-relaxed" style={{ color: "var(--text-primary)" }} {...props}>
+                <li className="leading-relaxed text-text-primary" {...props}>
                   {children}
                 </li>
               ),
               strong: ({ children, ...props }) => (
-                <strong style={{ color: "var(--accent)" }} {...props}>
+                <strong className="text-accent" {...props}>
                   {children}
                 </strong>
               ),
               code: ({ children, ...props }) => (
                 <code
-                  className="text-xs px-1.5 py-0.5 rounded"
-                  style={{ backgroundColor: "var(--bg-tertiary)", color: "var(--accent)" }}
+                  className="rounded bg-bg-tertiary px-1.5 py-0.5 text-xs text-accent"
                   {...props}
                 >
                   {children}
@@ -124,6 +155,58 @@ export default function Report() {
           </ReactMarkdown>
         </div>
       </Card>
+
+      {/* Contribution consent modal */}
+      {consentState === "show" && (
+        <>
+          <div
+            className="fixed inset-0 z-[200] animate-fade-in bg-black/50"
+            onClick={handleDecline}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed left-1/2 top-1/2 z-[201] w-[90%] max-w-[420px] animate-scale-in rounded-2xl border border-border bg-bg-secondary p-6 shadow-[0_12px_40px_rgba(0,0,0,0.5)] md:p-8"
+            style={{ transform: "translate(-50%, -50%)" }}
+          >
+            <div className="mb-4 text-center text-2xl">📊</div>
+            <h2 className="mb-2 text-center text-base font-semibold text-text-primary">
+              帮助改进 TradingJournalAnalyzer
+            </h2>
+            <p className="mb-4 text-center text-sm text-text-secondary">
+              您的交易数据能帮助系统变得更聪明。贡献后，您的交割单、分析数据、AI 报告将以完全匿名的方式加入案例库。
+            </p>
+            <ul className="mb-6 space-y-2">
+              {[
+                "仅用于分析算法改进",
+                "不包含任何个人信息（邮箱/手机）",
+                "股票代码保留，账户信息脱敏",
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2 text-sm text-text-secondary">
+                  <span className="mt-px shrink-0 text-success">✓</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2 md:flex-row md:justify-end">
+              <button
+                type="button"
+                onClick={handleDecline}
+                className="cursor-pointer rounded-lg border border-border bg-bg-tertiary px-4 py-2.5 text-sm text-text-primary transition-colors hover:brightness-125 focus-ring"
+              >
+                不了，谢谢
+              </button>
+              <button
+                type="button"
+                onClick={handleContribute}
+                className="cursor-pointer rounded-lg border-0 bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover focus-ring"
+              >
+                同意，匿名贡献
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

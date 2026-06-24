@@ -33,7 +33,7 @@ export default function Analysis() {
         navigate(`/report/${data.report_id}`);
       },
       onError: (err: Error) => {
-        toast.addToast("error", err.message || "生成报告失败");
+        toast.addToast("error", `AI 报告生成失败：${err.message || "请稍后重试"}`);
       },
     });
   };
@@ -50,11 +50,11 @@ export default function Analysis() {
         <div>
           <h1 className="text-xl font-semibold">分析面板</h1>
           {(stats.data?.filenames && stats.data.filenames.length > 1) ? (
-            <div className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+            <div className="mt-1 text-xs text-text-secondary">
               📄 {stats.data.filenames.join(" + ")}
             </div>
           ) : stats.data?.filename ? (
-            <div className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+            <div className="mt-1 text-xs text-text-secondary">
               📄 {stats.data.filename}
             </div>
           ) : null}
@@ -85,31 +85,21 @@ export default function Analysis() {
         </div>
       </div>
 
-      <div className="flex gap-1 mb-6" style={{ borderBottom: "1px solid var(--border)" }} role="tablist">
+      <div className="mb-6 flex gap-1 border-b border-border" role="tablist">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             role="tab"
             aria-selected={activeTab === tab.key}
             onClick={() => setActiveTab(tab.key)}
-            style={{
-              backgroundColor: "transparent",
-              border: "none",
-              borderBottom: activeTab === tab.key ? "2px solid var(--accent)" : "2px solid transparent",
-              color: activeTab === tab.key ? "var(--accent)" : "var(--text-secondary)",
-              padding: "10px 16px",
-              cursor: "pointer",
-              marginBottom: "-1px",
-              transition: "color 0.15s, border-color 0.15s",
-            }}
-            className="text-sm font-medium"
+            className="tab-btn px-4 py-2.5 text-sm font-medium"
           >
             {tab.label}{tab.loading ? " …" : ""}
           </button>
         ))}
       </div>
 
-      <div className="transition-opacity duration-200" style={{ opacity: 1 }}>
+      <div className="transition-opacity duration-200">
         {activeTab === "stats" && <StatsTab stats={stats} />}
         {activeTab === "insight" && <InsightTab insight={insight} />}
         {activeTab === "whatif" && <WhatIfTab whatIf={whatIf} />}

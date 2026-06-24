@@ -7,6 +7,7 @@ from app.models.pattern import Pattern
 from app.models.analysis import Analysis, AnalysisFile
 from app.models.report import Report
 from app.models.daily_bar import DailyBar
+from app.models.case_library import CaseLibrary
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "AnalysisFile",
     "Report",
     "DailyBar",
+    "CaseLibrary",
 ]

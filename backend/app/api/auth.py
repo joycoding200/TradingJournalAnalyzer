@@ -63,11 +63,11 @@ def register(request: Request, body: RegisterRequest, response: Response, db: Se
     if err:
         raise HTTPException(status_code=400, detail=err)
 
-    # Check duplicate email/phone (generic message to prevent account enumeration)
+    # Check duplicate email/phone
     if body.email and db.query(User).filter(User.email == body.email).first():
-        raise HTTPException(status_code=409, detail="注册失败，请检查输入")
+        raise HTTPException(status_code=409, detail="该邮箱已被注册，请直接登录")
     if body.phone and db.query(User).filter(User.phone == body.phone).first():
-        raise HTTPException(status_code=409, detail="注册失败，请检查输入")
+        raise HTTPException(status_code=409, detail="该手机号已被注册，请直接登录")
 
     user = User(
         email=body.email or None,

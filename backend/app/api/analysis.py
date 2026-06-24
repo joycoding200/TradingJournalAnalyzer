@@ -311,6 +311,9 @@ def get_stats(
             pnl=p.pnl,
             pnl_pct=p.pnl_pct,
             trade_ids=p.trade_ids,
+            entry_count=getattr(p, "entry_count", 0),
+            total_buys=getattr(p, "total_buys", 0.0),
+            total_sells=getattr(p, "total_sells", 0.0),
         )
         for p in positions
     ]
