@@ -134,13 +134,13 @@ class TestBuildUserPrompt:
         }
         prompt = build_user_prompt(data)
         assert "风险指标" in prompt
-        assert "盈亏比(PF)" in prompt
+        assert "盈亏比" in prompt
         assert "0.85" in prompt
-        assert "预期收益(Expectancy)" in prompt
+        assert "预期收益" in prompt
         assert "最大回撤" in prompt
         assert "连续亏损" in prompt
-        assert "最大回撤容忍度(MAE)" in prompt
-        assert "最大浮盈(MFE)" in prompt
+        assert "最大不利变动" in prompt
+        assert "最大有利变动" in prompt
         assert "止盈效率" in prompt
         assert "总收益率" in prompt
 

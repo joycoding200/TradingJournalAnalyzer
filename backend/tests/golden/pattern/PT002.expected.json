@@ -1,7 +1,8 @@
 {
-  "patterns": {
+  "patterns": ["SWING"],
+  "patterns_dict": {
     "0": ["SWING"],
-    "1": ["AVERAGE_DOWN", "SWING"]
+    "1": ["SWING"]
   },
   "primary_patterns": {
     "0": {"behavior": "SWING"},

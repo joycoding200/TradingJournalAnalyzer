@@ -1,5 +1,6 @@
 {
-  "patterns": {
+  "patterns": ["PYRAMID", "SWING"],
+  "patterns_dict": {
     "0": ["SWING"],
     "1": ["PYRAMID", "SWING"]
   },

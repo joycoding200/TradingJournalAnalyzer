@@ -12,7 +12,7 @@ QMT_CSV = (
 def get_auth_header(client):
     resp = client.post(
         "/api/auth/register",
-        json={"email": "upload_test@test.com", "password": "secret123"},
+        json={"email": "upload_test@test.com", "password": "Test1234"},
     )
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
@@ -21,7 +21,7 @@ def get_auth_header(client):
 class TestUploadFlow:
     """Test the 3-step upload flow."""
 
-    def test_upload_file_detects_qmt_format(self, client):
+    def test_upload_file_detects_smart_format(self, client):
         headers = get_auth_header(client)
         resp = client.post(
             "/api/upload",
@@ -32,9 +32,9 @@ class TestUploadFlow:
         data = resp.json()
         assert "raw_file_id" in data
         assert len(data["detected_formats"]) > 0
-        # QMT should be among detected formats
+        # SmartParser should be among detected formats
         formats = {f["source_type"] for f in data["detected_formats"]}
-        assert "qmt" in formats
+        assert "smart" in formats
 
     def test_confirm_format_returns_trade_preview(self, client):
         headers = get_auth_header(client)
@@ -50,7 +50,7 @@ class TestUploadFlow:
         resp = client.post(
             "/api/upload/confirm",
             headers=headers,
-            json={"raw_file_id": raw_file_id, "source_type": "qmt"},
+            json={"raw_file_id": raw_file_id, "source_type": "smart"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -76,7 +76,7 @@ class TestUploadFlow:
         client.post(
             "/api/upload/confirm",
             headers=headers,
-            json={"raw_file_id": raw_file_id, "source_type": "qmt"},
+            json={"raw_file_id": raw_file_id, "source_type": "smart"},
         )
 
         # Import
@@ -106,7 +106,7 @@ class TestUploadFlow:
         r2 = client.post(
             "/api/upload/confirm",
             headers=headers,
-            json={"raw_file_id": raw_file_id, "source_type": "qmt"},
+            json={"raw_file_id": raw_file_id, "source_type": "smart"},
         )
         assert r2.status_code == 200
         assert r2.json()["count"] == 4

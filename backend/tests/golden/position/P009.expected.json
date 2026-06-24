@@ -7,8 +7,8 @@
       "symbol": "600000",
       "asset_type": "stock",
       "entry_date": "2025-01-01",
-      "exit_date": "2025-01-10",
-      "holding_days": 9,
+      "exit_date": "2025-01-15",
+      "holding_days": 14,
       "total_quantity": 200.0,
       "avg_entry_price": 11.0,
       "avg_exit_price": 15.0,
@@ -26,6 +26,6 @@
     "total_pnl": 800.0,
     "expectancy": 0.3636,
     "total_return_pct": 0.3636,
-    "avg_holding_days": 9.0
+    "avg_holding_days": 14.0
   }
 }

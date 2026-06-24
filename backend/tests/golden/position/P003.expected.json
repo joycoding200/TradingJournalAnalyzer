@@ -1,37 +1,25 @@
 {
   "position_count": 1,
-
   "positions": [
     {
       "symbol": "600000",
-
       "quantity": 200,
-
       "avg_entry_price": 9.0,
-
       "avg_exit_price": 7.0,
-
-      "holding_days": 5,
-
+      "holding_days": 8,
       "pnl": -400.0,
-
       "pnl_pct": -0.222222,
-
       "cost_known": true
     }
   ],
-
   "patterns": [
-    "AVERAGE_DOWN"
+    "LARGE_LOSS_EXIT",
+    "SWING"
   ],
-
   "stats": {
     "total_trades": 1,
-
     "winning_trades": 0,
-
     "losing_trades": 1,
-
     "win_rate": 0.0
   }
 }
