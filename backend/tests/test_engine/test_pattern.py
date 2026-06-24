@@ -1090,7 +1090,7 @@ class TestCategoryField:
         """CATEGORY_MAP covers all behavioral pattern names."""
         expected = {
             "CHASE", "BOTTOM", "BREAKOUT",
-            "BULL_TREND", "BEAR_TREND", "BREAKDOWN",
+            "BULL_TREND", "BEAR_TREND", "SIDEWAYS", "BREAKDOWN",
             "SCALP", "SWING", "POSITION",
             "PYRAMID", "AVERAGE_DOWN", "TURN",
             "TIGHT_STOP", "TRAILING_STOP", "TIME_EXIT", "LARGE_LOSS_EXIT",
