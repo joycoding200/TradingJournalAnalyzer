@@ -1,11 +1,16 @@
-"""Shapley Value attribution — fair contribution of each pattern to total PnL.
+"""Shapley Value attribution (attribution.py).
 
-Replaces the naive "remove pattern → recompute PnL" approach which suffers from
-Attribution Overlap: when one position has multiple patterns (e.g., TREND + SWING),
-removing any one of them removes the entire position's PnL, causing double-counting.
+Fair contribution of each behavioral pattern to total PnL using Monte Carlo
+Shapley sampling. Replaces the naive "remove pattern -> recompute PnL" approach
+which suffers from Attribution Overlap (when a position carries multiple labels,
+removing any one drops the entire position's PnL, causing double-counting).
+
+NOTE: This module deals with *statistical pattern contribution* (Shapley values).
+For *factor contribution* (MAE/MFE breakdown, stop-loss counterfactuals), see
+whatif.py which contains the ProfitAttribution class and rule-simulation engine.
 
 Shapley Value guarantees:
-     Σ Shapley_i = total_pnl  (efficiency)
+     Sum of Shapley_i = total_pnl  (efficiency)
 Each pattern gets a fair share of jointly-attributed PnL.
 
 Uses Monte Carlo sampling for efficiency when N is large.
@@ -28,7 +33,7 @@ def shapley_attribution(
         n_samples: Number of Monte Carlo samples (more = more accurate).
 
     Returns:
-        {pattern_name: shapley_value} — sum of all values ≈ total_pnl.
+        {pattern_name: shapley_value} -- sum of all values approx total_pnl.
     """
     valid_indices = {
         i for i, p in enumerate(positions)

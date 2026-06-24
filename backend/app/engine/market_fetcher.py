@@ -25,6 +25,7 @@ _CLIENT = None
 _PAGE_SIZE = 800
 
 # Concurrency guard: prevent parallel mootdx fetches for the same symbol
+_client_lock = threading.Lock()
 _fetch_lock = threading.Lock()
 _fetching: set[str] = set()
 
@@ -33,9 +34,11 @@ def _get_client():
     """Return a cached mootdx Quotes client for standard market."""
     global _CLIENT
     if _CLIENT is None:
-        from mootdx.quotes import Quotes
-        from mootdx.consts import KLINE_DAILY
-        _CLIENT = Quotes.factory(market='std', timeout=15)
+        with _client_lock:
+            if _CLIENT is None:  # double-check under lock
+                from mootdx.quotes import Quotes
+                from mootdx.consts import KLINE_DAILY
+                _CLIENT = Quotes.factory(market='std', timeout=15)
     return _CLIENT
 
 

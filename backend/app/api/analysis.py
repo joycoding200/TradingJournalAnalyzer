@@ -211,7 +211,9 @@ def _compute_consecutive_losses(positions) -> int:
 
 
 @router.get("/{analysis_id}/stats", response_model=StatsResponse)
+@limiter.limit("30/minute")
 def get_stats(
+    request: Request,
     analysis_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -276,16 +278,16 @@ def get_stats(
         symbol_groups.setdefault(p.symbol, []).append(p)
     for symbol, group in symbol_groups.items():
         win_pos = [p for p in group if p.pnl > 0]
-        trade_count = len(group)
-        win_count = len(win_pos)
+        sym_trade_count = len(group)
+        sym_win_count = len(win_pos)
         total_pnl_sym = sum(p.pnl for p in group)
-        avg_hold = sum(p.holding_days for p in group) / trade_count if trade_count > 0 else 0.0
+        avg_hold = sum(p.holding_days for p in group) / sym_trade_count if sym_trade_count > 0 else 0.0
         exit_dates = [p.exit_date for p in group]
         symbol_summary_data.append({
             "symbol": symbol,
-            "trade_count": trade_count,
-            "win_count": win_count,
-            "win_rate": round(win_count / trade_count, 4) if trade_count > 0 else 0.0,
+            "trade_count": sym_trade_count,
+            "win_count": sym_win_count,
+            "win_rate": round(sym_win_count / sym_trade_count, 4) if sym_trade_count > 0 else 0.0,
             "total_pnl": round(total_pnl_sym, 2),
             "avg_holding_days": round(avg_hold, 1),
             "first_trade_date": str(min(exit_dates)) if exit_dates else "",
@@ -512,7 +514,9 @@ def _module_for_pattern(pattern_name: str) -> str:
 
 
 @router.get("/{analysis_id}/insight", response_model=InsightResponse)
+@limiter.limit("30/minute")
 def get_insight(
+    request: Request,
     analysis_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -587,7 +591,9 @@ def get_insight(
 
 
 @router.get("/{analysis_id}/whatif", response_model=WhatIfResponse)
+@limiter.limit("30/minute")
 def get_whatif(
+    request: Request,
     analysis_id: str,
     rule_type: str = "stop_loss",
     current_user: User = Depends(get_current_user),

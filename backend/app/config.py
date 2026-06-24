@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/tradelens"
+    database_url: str = "postgresql://localhost:5432/tradelens"
     secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 480  # 8 hours — avoids silent expiration during use
@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     claude_model: str = "claude-sonnet-4-6"
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
+    cors_origins: str = "http://localhost:5173"
     ai_base_url: str = Field(default="", alias="BASE_URL")
     ai_model: str = Field(default="", alias="MODEL")
 

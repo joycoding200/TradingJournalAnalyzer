@@ -7,6 +7,7 @@ import urllib.parse
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.jwt import create_token, get_current_user, get_token_payload, verify_password
@@ -102,6 +103,28 @@ def search_users(
         )
     users = query.order_by(User.created_at.desc()).limit(50).all()
 
+    # Pre-aggregate counts in 3 queries instead of 3*N (N+1 → O(1))
+    user_ids = [u.id for u in users]
+    file_counts = {}
+    analysis_counts = {}
+    report_counts = {}
+    if user_ids:
+        file_counts = dict(
+            db.query(RawFile.user_id, func.count(RawFile.id))
+            .filter(RawFile.user_id.in_(user_ids))
+            .group_by(RawFile.user_id).all()
+        )
+        analysis_counts = dict(
+            db.query(Analysis.user_id, func.count(Analysis.id))
+            .filter(Analysis.user_id.in_(user_ids))
+            .group_by(Analysis.user_id).all()
+        )
+        report_counts = dict(
+            db.query(Report.user_id, func.count(Report.id))
+            .filter(Report.user_id.in_(user_ids))
+            .group_by(Report.user_id).all()
+        )
+
     result = []
     for u in users:
         result.append(UserSummary(
@@ -110,9 +133,9 @@ def search_users(
             phone=u.phone or "",
             nickname=u.nickname or "",
             created_at=str(u.created_at) if u.created_at else "",
-            file_count=db.query(RawFile).filter(RawFile.user_id == u.id).count(),
-            analysis_count=db.query(Analysis).filter(Analysis.user_id == u.id).count(),
-            report_count=db.query(Report).filter(Report.user_id == u.id).count(),
+            file_count=file_counts.get(u.id, 0),
+            analysis_count=analysis_counts.get(u.id, 0),
+            report_count=report_counts.get(u.id, 0),
         ))
     return result
 

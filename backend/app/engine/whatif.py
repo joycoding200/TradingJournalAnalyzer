@@ -1,4 +1,17 @@
-"""Profit attribution: counterfactual backtest removing selected behavior patterns."""
+"""What-If engine (whatif.py).
+
+Two main capabilities:
+  1. ProfitAttribution — counterfactual backtest: remove positions matching a
+     behavior pattern and recompute total PnL to measure that pattern's impact.
+     This is a *rule-based* "what if this pattern didn't exist" analysis.
+  2. Stop-loss simulation — replay positions with a trailing-stop rule to
+     estimate how much loss could have been avoided.
+
+NOTE: For *statistical* pattern contribution (Shapley values / Monte Carlo
+decomposition), see attribution.py. The two modules address different questions:
+  - attribution.py: "How much did each pattern contribute?" (game-theoretic)
+  - whatif.py:     "What if this pattern didn't exist?"   (counterfactual)
+"""
 from dataclasses import dataclass
 
 

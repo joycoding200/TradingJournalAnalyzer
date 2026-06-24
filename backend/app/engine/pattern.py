@@ -15,6 +15,16 @@ Key financial fixes from code audit:
   - PYRAMID now checks open-position state, not final PnL
   - AVERAGE_DOWN now requires the position to be in a loss state
   - TIGHT_STOP/TRAILING_STOP/TIME_EXIT/LARGE_LOSS_EXIT are outcomes, not behaviors
+
+TODO: This file has grown to ~800 lines covering 5 distinct sub-systems
+(module-2 holding-period tags, module-3 risk/pyramid/avg-down, TURN detection,
+market-env trend analysis, psychology inference). Consider splitting into:
+  - pattern_holding.py  — SCALP/SWING/POSITION, PYRAMID, AVERAGE_DOWN, TURN
+  - pattern_market.py   — BULL_TREND, BEAR_TREND, BREAKDOWN, CHASE, BOTTOM,
+                           BREAKOUT, FOMO
+  - pattern_psychology.py — POSSIBLE_REVENGE, OVERTRADING, HOLD_LOSER,
+                             CUT_WINNER, PSY_FOMO
+Keep PatternEngine as a facade that delegates to the sub-modules.
 """
 from collections import Counter
 from dataclasses import dataclass, field
@@ -236,17 +246,29 @@ class PatternEngine:
                             )
                         )
                 # AVERAGE_DOWN: adding at a significantly LOWER price (>= 5%)
+                # Must also verify the prior position was in a loss state at time of entry.
+                # Per FINANCE_DOMAIN.md §2: "已有亏损持仓时以更低价格加仓"
+                # Without loss-state verification, a normal pullback add (profit → pullback → add)
+                # could be mislabeled as averaging down.
                 if pos.avg_entry_price < first.avg_entry_price * 0.95:
-                    tags.append(
-                        PatternResult(
-                            "AVERAGE_DOWN",
-                            0.8,
-                            {
-                                "avg_entry": pos.avg_entry_price,
-                                "first_entry_avg": first.avg_entry_price,
-                            },
+                    is_loss_add = False
+                    for prev_pos in all_positions:
+                        if (prev_pos.symbol == pos.symbol
+                                and prev_pos.entry_date <= pos.entry_date <= prev_pos.exit_date
+                                and pos.avg_entry_price < prev_pos.avg_entry_price * 0.95):
+                            is_loss_add = True
+                            break
+                    if is_loss_add:
+                        tags.append(
+                            PatternResult(
+                                "AVERAGE_DOWN",
+                                0.8,
+                                {
+                                    "avg_entry": pos.avg_entry_price,
+                                    "first_entry_avg": first.avg_entry_price,
+                                },
+                            )
                         )
-                    )
 
         # TURN -- intraday round trip (做T)
         trades = kwargs.get("trades")

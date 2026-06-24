@@ -77,7 +77,6 @@ Validator（`backend/app/ai/validator.py`）对 PF、max_drawdown_pct、consecut
 - 密码强度校验：8位+含字母+含数字
 - 密码传输用 POST body，禁止 GET query string
 - 下载文件名校验，过滤 CRLF 防 header injection
-- 清空数据 = 软删除（`is_deleted=True`），不丢失原始数据
 
 ### 性能
 - `ensure_market_data()` 先查 DB 缓存，有数据就跳过 mootdx

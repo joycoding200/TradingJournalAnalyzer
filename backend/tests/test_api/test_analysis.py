@@ -151,6 +151,7 @@ class TestAnalysisStats(_BaseAnalysisTest):
         assert resp.status_code == 404
 
     def test_stats_requires_auth(self, client):
+        client.cookies.clear()  # clear auth cookie set by setup fixture
         resp = client.get(
             f"/api/analysis/{self.analysis_id}/stats",
         )

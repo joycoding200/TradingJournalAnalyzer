@@ -46,7 +46,10 @@ export async function apiPost(path: string, body?: unknown): Promise<any> {
 
 export async function apiGet(path: string): Promise<any> {
   const resp = await apiFetch(path);
-  if (!resp.ok) throw new Error("Request failed");
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || "Request failed");
+  }
   return resp.json();
 }
 

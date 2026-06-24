@@ -19,7 +19,7 @@ MOCK_REPORT = """## 核心结论
 - 完成4笔交易，持仓周期合理，以波段交易为主
 
 ## 风险警示
-- 亏损交易占比过高，胜率仅50%
+- 亏损交易占比过高，胜率：50%
 
 ## 改善建议
 - 严格控制单笔亏损，设置止损位"""
@@ -80,6 +80,7 @@ class TestReportGenerate(_BaseReportTest):
     """Test report generation endpoint."""
 
     def test_generate_requires_auth(self, client):
+        client.cookies.clear()
         resp = client.post(
             "/api/report/generate",
             json={"analysis_id": "some-id"},
@@ -144,6 +145,7 @@ class TestReportGet(_BaseReportTest):
     """Test fetching individual reports."""
 
     def test_get_requires_auth(self, client):
+        client.cookies.clear()
         resp = client.get("/api/report/some-id")
         assert resp.status_code == 403
 

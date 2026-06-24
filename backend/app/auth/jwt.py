@@ -1,8 +1,14 @@
-"""JWT auth helpers: hash, verify, create_token, get_current_user."""
+"""JWT auth helpers: hash, verify, create_token, get_current_user.
+
+Supports both Bearer token (Authorization header) and httpOnly cookie
+authentication. The cookie path is the recommended secure approach
+(immune to XSS-based token theft); the Bearer header is retained for
+backward compatibility with existing API clients.
+"""
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -13,7 +19,23 @@ from app.database import get_db
 from app.models.user import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+
+
+class _OAuth2WithCookie(HTTPBearer):
+    """Bearer scheme that also reads the token from an httpOnly cookie.
+
+    Checks the ``access_token`` cookie first (preferred — XSS-safe),
+    then falls back to the ``Authorization: Bearer <token>`` header.
+    """
+
+    async def __call__(self, request: Request):
+        token = request.cookies.get("access_token")
+        if token:
+            return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        return await super().__call__(request)
+
+
+security = _OAuth2WithCookie()
 
 
 def hash_password(password: str) -> str:
@@ -30,6 +52,23 @@ def create_token(user_id: str, scope: str | None = None) -> str:
     if scope:
         payload["scope"] = scope
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+def set_auth_cookie(response, token: str) -> None:
+    """Set the JWT as an httpOnly cookie on the response.
+
+    Call this from login/register endpoints after creating a token.
+    The cookie is httpOnly (inaccessible to JS) to prevent XSS token theft.
+    """
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.jwt_expire_minutes * 60,
+        secure=False,  # set True when deploying behind HTTPS
+        path="/",
+    )
 
 
 def get_current_user(

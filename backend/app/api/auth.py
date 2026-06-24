@@ -1,9 +1,9 @@
 """Auth API routes: register, login, me, update profile."""
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
 from sqlalchemy.orm import Session
-from app.auth.jwt import create_token, get_current_user, hash_password, verify_password
+from app.auth.jwt import create_token, get_current_user, hash_password, set_auth_cookie, verify_password
 from app.database import get_db
 from app.ratelimit import limiter
 from app.models.user import User, generate_nickname
@@ -17,6 +17,12 @@ from app.schemas.auth import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Pre-computed dummy bcrypt hash to mitigate timing-based user enumeration.
+# When a login attempt targets a non-existent account, we still run a full
+# bcrypt verify against this dummy hash so the response time is indistinguishable
+# from a failed password check against a real account (~200ms either way).
+_DUMMY_HASH = hash_password("dummy-u3n-mera1i0n-t1m1ng-d3f3ns3")
 
 
 def _check_password_strength(pw: str) -> str | None:
@@ -48,7 +54,7 @@ def _password_strength_score(pw: str) -> int:
     "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED
 )
 @limiter.limit("5/minute")
-def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
+def register(request: Request, body: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     if not body.email and not body.phone:
         raise HTTPException(status_code=400, detail="请填写邮箱或手机号")
 
@@ -72,19 +78,29 @@ def register(request: Request, body: RegisterRequest, db: Session = Depends(get_
     db.add(user)
     db.commit()
     db.refresh(user)
-    return TokenResponse(access_token=create_token(user.id))
+    token = create_token(user.id)
+    set_auth_cookie(response, token)
+    return TokenResponse(access_token=token)
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, body: LoginRequest, response: Response, db: Session = Depends(get_db)):
     # Try email first, then phone
     user = db.query(User).filter(
         (User.email == body.account) | (User.phone == body.account)
     ).first()
-    if not user or not verify_password(body.password, user.password_hash):
+    if user is None:
+        # Dummy verify to defeat timing-based user enumeration.
+        # Without this, a non-existent account returns in ~1ms while a real
+        # account takes ~200ms for bcrypt — observable over repeated requests.
+        verify_password(body.password, _DUMMY_HASH)
         raise HTTPException(status_code=401, detail="账号或密码错误")
-    return TokenResponse(access_token=create_token(user.id))
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="账号或密码错误")
+    token = create_token(user.id)
+    set_auth_cookie(response, token)
+    return TokenResponse(access_token=token)
 
 
 @router.get("/me", response_model=UserResponse)

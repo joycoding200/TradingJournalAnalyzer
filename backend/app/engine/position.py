@@ -197,12 +197,21 @@ class PositionBuilder:
 
     @staticmethod
     def build_grouped(trades) -> list[PositionResult]:
-        """PRD-compliant: merge all trades for same symbol into unified positions.
+        """Group-based reconstruction: merge consecutive same-symbol trades.
 
-        Unlike build() which uses FIFO lot matching, this method groups
-        consecutive buys and sells for the same symbol into ONE position
-        when cumulative sells >= cumulative buys. Weighted average prices
-        are used for both entry and exit.
+        Unlike build() (the default FIFO method used by the API), this method
+        groups consecutive buys and sells for the same symbol into unified
+        positions when cumulative sells >= cumulative buys. Weighted average
+        prices are used for both entry and exit.
+
+        This method is retained because:
+        - Golden tests (tests/golden/) compare against build_grouped output
+        - It handles pre-existing positions correctly (orphan sells from before
+          the statement start date), which FIFO build() discards
+        - It serves as a reference implementation for the PRD-specified behavior
+
+        For API usage (analysis.py), use build() (FIFO) — that is the primary
+        production code path and what stats/insight/whatif endpoints consume.
 
         Args:
             trades: Iterable of objects with attributes:

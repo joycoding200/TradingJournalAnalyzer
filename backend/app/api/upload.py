@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt import get_current_user
 from app.database import get_db
-from app.models.analysis import Analysis
+from app.models.analysis import Analysis, AnalysisFile
 from app.models.raw_file import RawFile
+from app.models.report import Report
 from app.models.trade import Trade
 from app.models.user import User
 from app.parsers.registry import ParserRegistry
@@ -174,14 +175,33 @@ def clear_trades(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Soft-delete all trades for the current user. Raw files, analyses, and reports are preserved for admin retrieval."""
+    """Permanently delete all trading data for the current user.
+
+    Deletes in FK-safe order: reports → analyses (join table + rows) →
+    trades → raw files. This is irreversible.
+    """
     user_id = current_user.id
-    db.query(Trade).filter(
-        Trade.user_id == user_id, Trade.is_deleted.is_(False)
-    ).update({"is_deleted": True}, synchronize_session=False)
-    # Clear stats snapshots since the underlying data has changed
-    db.query(Analysis).filter(Analysis.user_id == user_id).update(
-        {"stats_snapshot": None}, synchronize_session=False
-    )
+
+    # 1. Reports (child of Analysis)
+    analysis_ids = [
+        row[0] for row in
+        db.query(Analysis.id).filter(Analysis.user_id == user_id).all()
+    ]
+    if analysis_ids:
+        db.query(Report).filter(Report.analysis_id.in_(analysis_ids)).delete(synchronize_session=False)
+
+    # 2. AnalysisFiles (join table)
+    if analysis_ids:
+        db.query(AnalysisFile).filter(AnalysisFile.analysis_id.in_(analysis_ids)).delete(synchronize_session=False)
+
+    # 3. Analyses
+    db.query(Analysis).filter(Analysis.user_id == user_id).delete(synchronize_session=False)
+
+    # 4. Trades
+    db.query(Trade).filter(Trade.user_id == user_id).delete(synchronize_session=False)
+
+    # 5. RawFiles
+    db.query(RawFile).filter(RawFile.user_id == user_id).delete(synchronize_session=False)
+
     db.commit()
-    return {"detail": "ok"}
+    return {"detail": "所有交易数据已永久删除"}

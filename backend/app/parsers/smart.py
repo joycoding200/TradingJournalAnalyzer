@@ -39,14 +39,40 @@ _COMMISSION_KEYWORDS = {"费", "佣", "税", "commission", "fee"}
 
 
 def _sample_values(series: pd.Series) -> list:
-    """Return up to 20 non-null values from a column."""
-    return series.dropna().head(20).tolist()
+    """Return up to 20 randomly-sampled non-null values from a column.
+
+    Uses random sampling instead of head() so the sample is representative
+    even when the first N rows are sparse or anomalous.
+    """
+    dropped = series.dropna()
+    if len(dropped) <= 20:
+        return dropped.tolist()
+    return dropped.sample(n=20, random_state=42).tolist()
 
 
 def _classify_column(name: str, values: list) -> dict[str, float]:
-    """Score a column against each semantic type. Returns {type: score}."""
-    name_lower = str(name).lower()
+    """Score a column against each semantic type. Returns {type: score}.
+
+    Uses BOTH column name hints AND value heuristics. Name match alone
+    gives 0.4-0.5 baseline, boosted further by value confirmation.
+    """
+    name_str = str(name).strip()
     scores = {}
+
+    # ── Name-based bonuses (column header hints) ─────────
+    _name_bonus = {
+        "DATE": {"日期", "时间", "成交日期", "委托日期", "报单日期"},
+        "STOCK_SYMBOL": {"证券代码", "股票代码", "代码", "证券名称", "股票名称"},
+        "DIRECTION": {"买卖", "方向", "操作", "业务名称", "业务类型", "交易类型"},
+        "PRICE": {"成交价", "价格", "委托价", "成交价格", "委托价格", "均价"},
+        "QUANTITY": {"成交数量", "数量", "成交量", "委托数量", "股数"},
+        "AMOUNT": {"成交金额", "金额", "成交额", "委托金额", "发生金额"},
+        "COMMISSION": {"佣金", "手续费", "印花税", "过户费", "经手费", "证管费", "其它费", "其他费"},
+        "MARGIN": {"保证金", "占用资金"},
+    }
+    for col_type, keywords in _name_bonus.items():
+        if any(kw in name_str for kw in keywords):
+            scores[col_type] = 0.5  # name match gives strong baseline
 
     # ── DATE ────────────────────────────────────────────
     str_values = [str(v) for v in values]
@@ -65,7 +91,7 @@ def _classify_column(name: str, values: list) -> dict[str, float]:
         except Exception:
             pass
     date_score = parsed_count / len(values) if values else 0.0
-    scores["DATE"] = min(date_score, 1.0)
+    scores["DATE"] = min(scores.get("DATE", 0) + date_score, 1.0)
 
     # ── SYMBOL (stock) ─────────────────────────────────
     stock_score = 0.0
@@ -75,7 +101,9 @@ def _classify_column(name: str, values: list) -> dict[str, float]:
             stock_score += 1.0
         elif re.match(r'^\d{6}$', v):
             stock_score += 0.6
-    scores["STOCK_SYMBOL"] = stock_score / len(str_values) if str_values else 0.0
+    _stock_base = scores.get("STOCK_SYMBOL", 0)
+    _stock_val = stock_score / len(str_values) if str_values else 0.0
+    scores["STOCK_SYMBOL"] = min(_stock_base + _stock_val, 1.0)
 
     # ── SYMBOL (futures) ───────────────────────────────
     future_score = 0.0
@@ -92,7 +120,9 @@ def _classify_column(name: str, values: list) -> dict[str, float]:
             else:
                 # Unrecognized prefix but still letter+number → probably futures
                 future_score += 0.5
-    scores["FUTURES_SYMBOL"] = future_score / len(str_values) if str_values else 0.0
+    _fut_base = scores.get("FUTURES_SYMBOL", 0)
+    _fut_val = future_score / len(str_values) if str_values else 0.0
+    scores["FUTURES_SYMBOL"] = min(_fut_base + _fut_val, 1.0)
 
     # ── DIRECTION ──────────────────────────────────────
     dir_score = 0.0
@@ -102,7 +132,9 @@ def _classify_column(name: str, values: list) -> dict[str, float]:
             dir_score += 1.0
         elif any(w in str(v) for w in ["买", "卖", "BUY", "SELL", "开", "平"]):
             dir_score += 0.5
-    scores["DIRECTION"] = dir_score / len(str_values) if str_values else 0.0
+    _dir_base = scores.get("DIRECTION", 0)
+    _dir_val = dir_score / len(str_values) if str_values else 0.0
+    scores["DIRECTION"] = min(_dir_base + _dir_val, 1.0)
 
     # ── NUMERIC columns ────────────────────────────────
     numeric_values = []
@@ -140,7 +172,8 @@ def _classify_column(name: str, values: list) -> dict[str, float]:
             price_score += 0.3
         elif avg_val < 10000:
             price_score += 0.2
-        scores["PRICE"] = min(max(price_score, 0.0), 1.0)
+        _pr_base = scores.get("PRICE", 0)
+        scores["PRICE"] = min(max(_pr_base + price_score, 0.0), 1.0)
 
     # ── QUANTITY ───────────────────────────────────────
     qty_score = 0.0
@@ -152,35 +185,39 @@ def _classify_column(name: str, values: list) -> dict[str, float]:
     # Futures lots: typically small integers
     if all(v <= 1000 for v in numeric_values) and len(set(numeric_values)) <= len(numeric_values) * 0.8:
         qty_score += 0.2
-    scores["QUANTITY"] = min(qty_score, 1.0)
+    _qty_base = scores.get("QUANTITY", 0)
+    scores["QUANTITY"] = min(_qty_base + qty_score, 1.0)
 
     # ── COMMISSION ─────────────────────────────────────
     comm_score = 0.0
     if avg_val < 1000 and max_val < 10000:
         comm_score += 0.3
     # Commission keywords in column name boost
-    if any(kw in name_lower for kw in _COMMISSION_KEYWORDS):
+    if any(kw in name_str for kw in _COMMISSION_KEYWORDS):
         comm_score += 0.4
     # Commission values are often small
     if avg_val < 100 and max_val < 500:
         comm_score += 0.2
-    scores["COMMISSION"] = min(comm_score, 1.0)
+    _comm_base = scores.get("COMMISSION", 0)
+    scores["COMMISSION"] = min(_comm_base + comm_score, 1.0)
 
     # ── AMOUNT ─────────────────────────────────────────
     amount_score = 0.0
     if max_val > 1000:
         amount_score += 0.3
-    if "金额" in name_lower or "成交额" in name_lower or "amount" in name_lower:
+    if "金额" in name_str or "成交额" in name_str or "amount" in name_str:
         amount_score += 0.4
-    scores["AMOUNT"] = min(amount_score, 1.0)
+    _amt_base = scores.get("AMOUNT", 0)
+    scores["AMOUNT"] = min(_amt_base + amount_score, 1.0)
 
     # ── MARGIN ─────────────────────────────────────────
     margin_score = 0.0
-    if "保证金" in name_lower or "保证" in name_lower or "margin" in name_lower:
+    if "保证金" in name_str or "保证" in name_str or "margin" in name_str:
         margin_score += 0.5
     if max_val > 10000:
         margin_score += 0.3
-    scores["MARGIN"] = min(margin_score, 1.0)
+    _mar_base = scores.get("MARGIN", 0)
+    scores["MARGIN"] = min(_mar_base + margin_score, 1.0)
 
     # Cross-penalization: if this column is MORE likely commission than price, penalize PRICE
     if scores.get("COMMISSION", 0) > scores.get("PRICE", 0):
@@ -273,12 +310,19 @@ class SmartParser(BaseParser):
         future_col = best_col("FUTURES_SYMBOL")
         symbol_col = stock_col or future_col
 
-        # Exclude symbol column from price/qty/direction to avoid misclassification
-        _non_symbol = {symbol_col} if symbol_col else set()
+        # Exclude already-classified columns (symbol, date) and ID-like columns
+        # from qty/price/direction. ID columns (股东代码, 资金账号, 客户编号)
+        # often have large integers that score high as QUANTITY (0.7+), beating
+        # the real quantity column (0.4). See PROJECT_EXPERIENCE.md.
+        _id_keywords = ["序号", "编号", "成交编号", "委托编号", "合同编号",
+                        "股东代码", "资金账号", "客户编号", "代码", "账号"]
+        _exclude = {c for c in (symbol_col, date_col) if c}
+        _exclude |= {c for c in column_scores
+                     if any(kw in str(c) for kw in _id_keywords)}
 
-        direction_col = best_col("DIRECTION", exclude=_non_symbol)
-        price_col = best_col("PRICE", exclude=_non_symbol)
-        qty_col = best_col("QUANTITY", exclude=_non_symbol)
+        direction_col = best_col("DIRECTION", exclude=_exclude)
+        price_col = best_col("PRICE", exclude=_exclude)
+        qty_col = best_col("QUANTITY", exclude=_exclude)
 
         # Asset type determined by which symbol column scored higher
         stock_score = column_scores.get(stock_col or "", {}).get("STOCK_SYMBOL", 0)
