@@ -1,6 +1,10 @@
 """Analysis API routes: run analysis, fetch stats / insight / what-if."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 
 from app.auth.jwt import get_current_user

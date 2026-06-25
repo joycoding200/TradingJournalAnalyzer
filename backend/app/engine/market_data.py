@@ -68,11 +68,48 @@ class MarketDataCache:
 
     @staticmethod
     def store_bars(db: Session, bars: list[dict]) -> int:
-        """Store daily bars, skipping duplicates using UNIQUE constraint. Returns count of stored bars."""
+        """Store daily bars, skipping duplicates via the UNIQUE constraint.
+
+        On PostgreSQL: uses ON CONFLICT DO NOTHING — atomic across
+        concurrent workers with no extra round-trip.
+
+        On SQLite: falls back to check-then-insert (no concurrent writers
+        in SQLite, so the race is harmless).
+        """
         if not bars:
             return 0
 
-        # First get existing dates in bulk
+        engine = db.get_bind()
+        is_postgres = engine.dialect.name == "postgresql"
+
+        if is_postgres:
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            stmt = pg_insert(DailyBar).values(
+                [
+                    {
+                        "symbol": b["symbol"],
+                        "date": b["date"],
+                        "open": b["open"],
+                        "high": b["high"],
+                        "low": b["low"],
+                        "close": b["close"],
+                        "volume": b.get("volume", 0.0),
+                        "ma5": b.get("ma5"),
+                        "ma10": b.get("ma10"),
+                        "ma20": b.get("ma20"),
+                        "ma60": b.get("ma60"),
+                        "avg_volume_20d": b.get("avg_volume_20d"),
+                    }
+                    for b in bars
+                ]
+            ).on_conflict_do_nothing(index_elements=["symbol", "date"])
+
+            result = db.execute(stmt)
+            db.commit()
+            return result.rowcount if result.rowcount else 0
+
+        # SQLite / other: batch-insert, skipping existing dates
         symbol = bars[0]["symbol"]
         dates = [b["date"] for b in bars]
         existing = set(
@@ -82,7 +119,6 @@ class MarketDataCache:
         )
         existing_dates = {d[0] for d in existing}
 
-        # Insert only new bars
         count = 0
         for b in bars:
             if b["date"] not in existing_dates:

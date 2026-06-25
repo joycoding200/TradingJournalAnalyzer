@@ -2,7 +2,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Column, Date, DateTime, ForeignKey, String, JSON
+import sqlalchemy as sa
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Index, String, JSON
 
 from app.database import Base
 
@@ -21,7 +22,12 @@ class Analysis(Base):
     date_end = Column(Date, nullable=False)
     stats_snapshot = Column(JSON, nullable=True)
     created_at = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_analyses_user_date_range", "user_id", "date_start", "date_end"),
     )
 
 

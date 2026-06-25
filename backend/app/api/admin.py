@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth.jwt import create_token, get_current_user, get_token_payload, verify_password
+from app.auth.jwt import create_token, get_current_user, get_token_payload, hash_password, verify_password
 from app.database import get_db
 from app.ratelimit import limiter
 from app.models.analysis import Analysis
@@ -33,6 +33,11 @@ def _read_raw_file_bytes(rf) -> bytes:
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+# Timing-attack defence identical to the main login endpoint.
+# When admin_login targets a non-existent or non-admin account, we still
+# run a full bcrypt verify so the response time is indistinguishable.
+_ADMIN_DUMMY_HASH = hash_password("admin-dummy-u3n-mera1i0n-def3ns3")
 
 
 def _safe_filename(name: str) -> str:
@@ -97,7 +102,11 @@ def admin_login(request: Request, body: AdminLoginRequest, db: Session = Depends
     user = db.query(User).filter(
         User.email == body.username, User.is_admin == True
     ).first()
-    if not user or not verify_password(body.password, user.password_hash):
+    if user is None:
+        # Dummy verify to defeat timing-based admin enumeration
+        verify_password(body.password, _ADMIN_DUMMY_HASH)
+        raise HTTPException(status_code=401, detail="管理员账号或密码错误")
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="管理员账号或密码错误")
     return {"access_token": create_token(user.id, scope="admin"), "token_type": "bearer"}
 

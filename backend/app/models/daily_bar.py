@@ -1,6 +1,7 @@
 """Daily OHLCV bar model for caching market data."""
 import uuid
 from datetime import date, datetime, timezone
+import sqlalchemy as sa
 from sqlalchemy import String, Date, Float, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
@@ -23,7 +24,9 @@ class DailyBar(Base):
     ma60: Mapped[float] = mapped_column(Float, nullable=True)
     avg_volume_20d: Mapped[float] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime, nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now()
     )
 
     __table_args__ = (

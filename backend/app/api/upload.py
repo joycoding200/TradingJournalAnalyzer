@@ -1,8 +1,11 @@
 """Upload API routes: upload file, confirm format, import trades."""
 
+import logging
 import os
 import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Header, Request
 from sqlalchemy.orm import Session

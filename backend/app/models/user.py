@@ -3,6 +3,7 @@ import random
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, Column, DateTime, String
 
 from app.database import Base
@@ -29,5 +30,6 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
     password_hash = Column(String(255), nullable=False)
     created_at = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now()
     )

@@ -1,8 +1,11 @@
 """Auth API routes: register, login, me, update profile."""
+import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 
 from app.auth.jwt import create_token, get_current_user, get_token_payload, hash_password, set_auth_cookie, verify_password
@@ -95,11 +98,11 @@ def login(request: Request, body: LoginRequest, response: Response, db: Session 
     ).first()
     if user is None:
         # Dummy verify to defeat timing-based user enumeration.
-        # Without this, a non-existent account returns in ~1ms while a real
-        # account takes ~200ms for bcrypt — observable over repeated requests.
         verify_password(body.password, _DUMMY_HASH)
+        logger.warning("login failed: account not found account=%s", body.account[:30])
         raise HTTPException(status_code=401, detail="账号或密码错误")
     if not verify_password(body.password, user.password_hash):
+        logger.warning("login failed: wrong password user_id=%s", user.id)
         raise HTTPException(status_code=401, detail="账号或密码错误")
     token = create_token(user.id)
     set_auth_cookie(response, token)

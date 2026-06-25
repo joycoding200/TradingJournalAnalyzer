@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 
 from app.database import Base
@@ -20,5 +21,6 @@ class RawFile(Base):
     file_path = Column(String(1000), nullable=True)  # rel path under backend/uploads/
     file_size = Column(Integer, nullable=True)         # bytes
     uploaded_at = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now()
     )

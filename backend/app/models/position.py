@@ -27,4 +27,5 @@ class Position(Base):
 
     __table_args__ = (
         Index("ix_positions_user_entry_date", "user_id", "entry_date"),
+        Index("ix_positions_symbol", "symbol"),
     )

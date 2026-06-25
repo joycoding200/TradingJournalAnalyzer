@@ -1,6 +1,9 @@
 """Report API routes: generate AI report, fetch report(s)."""
 
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
@@ -8,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.prompt import SYSTEM_PROMPT, build_user_prompt
 from app.ai.provider import get_llm
+from app.ai.sanitizer import sanitize_report
 from app.ai.validator import ReportValidator, generate_with_retry
 from app.auth.jwt import get_current_user
 from app.api.common import load_analysis, load_trades
@@ -298,6 +302,9 @@ async def generate_report(
     report_content = await generate_with_retry(
         provider, SYSTEM_PROMPT, user_prompt, analysis_data
     )
+
+    # Sanitize XSS vectors before saving (P1-14)
+    report_content = sanitize_report(report_content)
 
     # Validate
     validation = ReportValidator().validate(report_content, analysis_data)

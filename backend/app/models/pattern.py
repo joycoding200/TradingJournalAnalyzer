@@ -13,6 +13,6 @@ class Pattern(Base):
     position_id = Column(
         String(36), ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    pattern_name = Column(String(30), nullable=False)
+    pattern_name = Column(String(30), nullable=False, index=True)
     confidence = Column(Float, default=1.0)
     context = Column(JSON, default=dict)

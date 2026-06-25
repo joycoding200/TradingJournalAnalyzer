@@ -53,6 +53,7 @@ def create_token(user_id: str, scope: str | None = None) -> str:
         "exp": expire,
         "iat": datetime.now(timezone.utc).timestamp(),
         "jti": str(__import__("uuid").uuid4()),  # unique token ID for revocation
+        "aud": settings.jwt_audience,            # audience binding: this token is only valid for TJA API
     }
     if scope:
         payload["scope"] = scope
@@ -86,6 +87,7 @@ def get_current_user(
             credentials.credentials,
             settings.secret_key,
             algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
         )
         user_id = payload.get("sub")
         if user_id is None:
@@ -121,6 +123,7 @@ def get_token_payload(
             credentials.credentials,
             settings.secret_key,
             algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
         )
         return payload
     except JWTError:

@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, JSON
 
 from app.database import Base
@@ -22,5 +23,6 @@ class Report(Base):
     report_content = Column(Text, nullable=False)
     validation_passed = Column(Boolean, default=True, nullable=False)
     created_at = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now()
     )

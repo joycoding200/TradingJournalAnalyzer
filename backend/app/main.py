@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import engine, Base, SessionLocal
 from app.api import api_router
+from app.logging_config import setup_logging, get_logger
 from app.ratelimit import limiter
 
 # Import all models so Base.metadata knows about them
@@ -17,6 +18,10 @@ import app.models  # noqa: F401
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
+    logger = get_logger(__name__)
+    logger.info("TradingJournalAnalyzer starting up (ENV=%s)", settings.env)
+
     # Development convenience: create_all is safe for prototyping.
     # Production deployments MUST use Alembic instead:
     #   cd backend && alembic upgrade head
@@ -27,6 +32,8 @@ async def lifespan(app: FastAPI):
     _backfill_analysis_files()
 
     yield
+
+    logger.info("TradingJournalAnalyzer shutting down")
 
 
 def _backfill_analysis_files():

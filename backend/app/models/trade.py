@@ -31,6 +31,7 @@ class Trade(Base):
 
     __table_args__ = (
         Index("ix_trades_user_datetime", "user_id", "datetime"),
+        Index("ix_trades_raw_file_id", "raw_file_id"),
         Index(
             "ix_trades_user_symbol_datetime",
             "user_id",
