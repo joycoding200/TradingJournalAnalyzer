@@ -1,5 +1,6 @@
 """Upload API routes: upload file, confirm format, import trades."""
 
+import hashlib
 import logging
 import os
 import shutil
@@ -88,9 +89,26 @@ def upload_file(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large")
 
+    # 计算内容哈希，检查是否重复上传
+    content_hash = hashlib.sha256(content).hexdigest()
+    existing = (
+        db.query(RawFile)
+        .filter(
+            RawFile.user_id == current_user.id,
+            RawFile.content_hash == content_hash,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"此文件已上传过（文件名：{existing.filename}），请勿重复上传。",
+        )
+
     raw_file = RawFile(
         user_id=current_user.id,
         filename=filename,
+        content_hash=content_hash,
     )
     db.add(raw_file)
     db.flush()  # get raw_file.id before writing to disk
