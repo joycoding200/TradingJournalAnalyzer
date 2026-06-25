@@ -212,7 +212,59 @@ def import_trades(
 
     content = _read_raw_content(raw_file)
     trades = parser_cls.parse(content, raw_file.filename)
+
+    if not trades:
+        return ImportResponse(imported_count=0, skipped_count=0)
+
+    # 构建本次导入交易唯一键集合 (datetime, symbol, exchange, side, qty, price)
+    incoming_keys = {
+        (
+            t.datetime.replace(microsecond=0),
+            t.symbol,
+            t.exchange,
+            t.side,
+            t.quantity,
+            t.price,
+        )
+        for t in trades
+    }
+
+    # 批量查询用户全局已有交易，构建已有唯一键集合
+    existing_rows = (
+        db.query(
+            Trade.datetime,
+            Trade.symbol,
+            Trade.exchange,
+            Trade.side,
+            Trade.quantity,
+            Trade.price,
+        )
+        .filter(
+            Trade.user_id == current_user.id,
+            Trade.is_deleted.is_(False),
+        )
+        .all()
+    )
+    existing_keys = {
+        (dt.replace(microsecond=0), sym, ex, side, qty, price)
+        for dt, sym, ex, side, qty, price in existing_rows
+    }
+
+    # 过滤：只写入新交易
+    imported = 0
+    skipped = 0
     for t in trades:
+        key = (
+            t.datetime.replace(microsecond=0),
+            t.symbol,
+            t.exchange,
+            t.side,
+            t.quantity,
+            t.price,
+        )
+        if key in existing_keys:
+            skipped += 1
+            continue
         db.add(
             Trade(
                 raw_file_id=raw_file.id,
@@ -229,9 +281,13 @@ def import_trades(
                 multiplier=t.multiplier,
             )
         )
-    db.commit()
+        existing_keys.add(key)  # 同文件内去重
+        imported += 1
 
-    return ImportResponse(imported_count=len(trades))
+    if imported > 0:
+        db.commit()
+
+    return ImportResponse(imported_count=imported, skipped_count=skipped)
 
 
 @router.delete("/trades", status_code=status.HTTP_200_OK)
