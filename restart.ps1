@@ -47,21 +47,20 @@ $frontendJob = Start-Process -NoNewWindow -PassThru -FilePath "cmd" `
 Pop-Location
 ok "PID=$($frontendJob.Id)  log: $LOG_DIR\frontend.log"
 
-# 4. Wait for backend to be ready
+# 4. Wait for backend to be ready (curl.exe bypasses PowerShell proxy)
 Write-Host ""
 Write-Host -NoNewline "  Waiting for backend"
 $ready = $false
 for ($i = 1; $i -le 20; $i++) {
-    try {
-        $null = Invoke-WebRequest -Uri "http://localhost:$BACKEND_PORT/api/health" -UseBasicParsing -TimeoutSec 1
+    $result = curl.exe -s -o NUL -w "%{http_code}" "http://localhost:$BACKEND_PORT/api/health" 2>$null
+    if ($result -eq "200") {
         Write-Host ""
         ok "Backend ready"
         $ready = $true
         break
-    } catch {
-        Write-Host -NoNewline "."
-        Start-Sleep 0.5
     }
+    Write-Host -NoNewline "."
+    Start-Sleep 0.5
 }
 
 if (-not $ready) {
