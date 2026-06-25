@@ -5,12 +5,20 @@ import { useToast } from "../context/ToastContext";
 import { register as registerApi } from "../api/auth";
 import { Card, Input, Button } from "../components/ui";
 
-const STRENGTH_LABELS: Record<number, { text: string; color: string; width: string }> = {
-  0: { text: "弱", color: "var(--danger)", width: "25%" },
-  1: { text: "一般", color: "var(--danger)", width: "50%" },
-  2: { text: "中等", color: "#f59e0b", width: "75%" },
-  3: { text: "强", color: "var(--success)", width: "100%" },
-  4: { text: "很强", color: "var(--success)", width: "100%" },
+const STRENGTH_LABELS: Record<number, { text: string; barClass: string; width: string }> = {
+  0: { text: "弱", barClass: "bg-danger", width: "25%" },
+  1: { text: "一般", barClass: "bg-danger", width: "50%" },
+  2: { text: "中等", barClass: "bg-amber-500", width: "75%" },
+  3: { text: "强", barClass: "bg-success", width: "100%" },
+  4: { text: "很强", barClass: "bg-success", width: "100%" },
+};
+
+const STRENGTH_TEXT_CLASS: Record<number, string> = {
+  0: "text-danger",
+  1: "text-danger",
+  2: "text-amber-500",
+  3: "text-success",
+  4: "text-success",
 };
 
 function passwordStrength(pw: string): number {
@@ -74,26 +82,30 @@ export default function Register() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4">
+    <div className="flex min-h-[80vh] items-center justify-center px-4">
       <Card className="w-full max-w-sm p-8">
-        <h1 className="text-xl font-semibold mb-6 text-center">注册</h1>
+        <h1 className="mb-6 text-center text-xl font-semibold">注册</h1>
         {error && (
-          <div className="text-sm mb-4 p-3 rounded-lg" style={{ backgroundColor: "rgba(248,113,113,0.1)", color: "var(--danger)" }}>
+          <div className="mb-4 rounded-lg bg-danger/10 p-3 text-sm text-danger">
             {error}
           </div>
         )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {/* Email / Phone toggle */}
-          <div className="flex gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-            <button type="button" onClick={() => setMode("email")}
-              style={{ border: "none", background: "none", cursor: "pointer",
-                color: mode === "email" ? "var(--accent)" : "var(--text-secondary)", fontWeight: mode === "email" ? 600 : 400 }}>
+          <div className="flex gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setMode("email")}
+              className={`cursor-pointer border-0 bg-transparent ${mode === "email" ? "font-semibold text-accent" : "font-normal text-text-secondary"}`}
+            >
               邮箱注册
             </button>
-            <span>|</span>
-            <button type="button" onClick={() => setMode("phone")}
-              style={{ border: "none", background: "none", cursor: "pointer",
-                color: mode === "phone" ? "var(--accent)" : "var(--text-secondary)", fontWeight: mode === "phone" ? 600 : 400 }}>
+            <span className="text-text-secondary">|</span>
+            <button
+              type="button"
+              onClick={() => setMode("phone")}
+              className={`cursor-pointer border-0 bg-transparent ${mode === "phone" ? "font-semibold text-accent" : "font-normal text-text-secondary"}`}
+            >
               手机号注册
             </button>
           </div>
@@ -106,20 +118,25 @@ export default function Register() {
               onChange={(e) => setPhone(e.target.value)} required maxLength={11} />
           )}
 
-          <div style={{ position: "relative" }}>
+          <div className="relative">
             <Input type={showPw ? "text" : "password"} placeholder="密码（至少8位，含字母+数字）" value={password}
               onChange={(e) => setPassword(e.target.value)} required minLength={8} className="pr-10" />
-            <button type="button" onClick={() => setShowPw(!showPw)}
+            <button
+              type="button"
+              onClick={() => setShowPw(!showPw)}
               aria-label={showPw ? "隐藏密码" : "显示密码"}
-              style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 16, padding: 4, lineHeight: 1 }}>
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer border-0 bg-transparent p-1 text-base leading-none text-text-secondary focus-ring"
+            >
               {showPw ? "🙈" : "👁"}
             </button>
             {password && (
               <div className="mt-2">
-                <div style={{ backgroundColor: "var(--border)", borderRadius: 4, height: 4, overflow: "hidden" }}>
-                  <div style={{ width: s.width, height: "100%", backgroundColor: s.color, borderRadius: 4, transition: "width 0.3s" }} />
+                <div className="h-1 overflow-hidden rounded bg-border">
+                  <div className={`h-full rounded transition-[width] duration-300 ${s.barClass}`} style={{ width: s.width }} />
                 </div>
-                <div className="text-xs mt-1" style={{ color: s.color }}>密码强度：{s.text}</div>
+                <div className={`mt-1 text-xs ${STRENGTH_TEXT_CLASS[strength]}`}>
+                  密码强度：{s.text}
+                </div>
               </div>
             )}
           </div>
@@ -128,8 +145,8 @@ export default function Register() {
             {loading ? "注册中..." : "注册"}
           </Button>
         </form>
-        <p className="text-sm mt-4 text-center" style={{ color: "var(--text-secondary)" }}>
-          已有账号？<Link to="/login" style={{ color: "var(--accent)" }}>登录</Link>
+        <p className="mt-4 text-center text-sm text-text-secondary">
+          已有账号？<Link to="/login" className="text-accent hover:underline">登录</Link>
         </p>
       </Card>
     </div>
