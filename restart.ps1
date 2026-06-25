@@ -31,23 +31,19 @@ print('  done')
 "@
 Start-Sleep 1
 
-# 2. Start backend
+# 2. Start backend (cmd /c merges stderr into stdout)
 Write-Host "[2/3] Starting backend :$BACKEND_PORT ..."
 Push-Location "$ROOT\backend"
-$backendJob = Start-Process -NoNewWindow -PassThru -FilePath $PYTHON `
-    -ArgumentList "-m","uvicorn","app.main:app","--host","0.0.0.0","--port","$BACKEND_PORT" `
-    -RedirectStandardOutput "$LOG_DIR\backend.log" `
-    -RedirectStandardError "$LOG_DIR\backend.log"
+$backendJob = Start-Process -NoNewWindow -PassThru -FilePath "cmd" `
+    -ArgumentList "/c","$PYTHON -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT > `"$LOG_DIR\backend.log`" 2>&1"
 Pop-Location
 ok "PID=$($backendJob.Id)  log: $LOG_DIR\backend.log"
 
 # 3. Start frontend
 Write-Host "[3/3] Starting frontend :$FRONTEND_PORT ..."
 Push-Location "$ROOT\frontend"
-$frontendJob = Start-Process -NoNewWindow -PassThru -FilePath "npm" `
-    -ArgumentList "run","dev","--","--port","$FRONTEND_PORT" `
-    -RedirectStandardOutput "$LOG_DIR\frontend.log" `
-    -RedirectStandardError "$LOG_DIR\frontend.log"
+$frontendJob = Start-Process -NoNewWindow -PassThru -FilePath "cmd" `
+    -ArgumentList "/c","npm run dev -- --port $FRONTEND_PORT > `"$LOG_DIR\frontend.log`" 2>&1"
 Pop-Location
 ok "PID=$($frontendJob.Id)  log: $LOG_DIR\frontend.log"
 
