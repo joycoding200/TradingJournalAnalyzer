@@ -11,6 +11,10 @@ from app.database import Base
 class RawFile(Base):
     __tablename__ = "raw_files"
 
+    __table_args__ = (
+        sa.Index("ix_raw_files_user_content_hash", "user_id", "content_hash"),
+    )
+
     id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
     user_id = Column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
