@@ -216,19 +216,6 @@ def import_trades(
     if not trades:
         return ImportResponse(imported_count=0, skipped_count=0)
 
-    # 构建本次导入交易唯一键集合 (datetime, symbol, exchange, side, qty, price)
-    incoming_keys = {
-        (
-            t.datetime.replace(microsecond=0),
-            t.symbol,
-            t.exchange,
-            t.side,
-            t.quantity,
-            t.price,
-        )
-        for t in trades
-    }
-
     # 批量查询用户全局已有交易，构建已有唯一键集合
     existing_rows = (
         db.query(
