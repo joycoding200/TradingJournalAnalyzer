@@ -17,7 +17,7 @@ interface PatternChartProps {
 export default function PatternChart({ data }: PatternChartProps) {
   if (!data || data.length === 0) {
     return (
-      <div className="text-center py-8" style={{ color: "var(--text-secondary)" }}>
+      <div className="py-8 text-center text-text-secondary">
         暂无行为标签数据
       </div>
     );
@@ -31,8 +31,8 @@ export default function PatternChart({ data }: PatternChartProps) {
   }));
 
   return (
-    <div style={{ backgroundColor: "var(--bg-secondary)", borderRadius: "12px", border: "1px solid var(--border)" }} className="p-4">
-      <h3 className="text-sm font-medium mb-4" style={{ color: "var(--text-secondary)" }}>
+    <div className="rounded-xl border border-border bg-bg-secondary p-4">
+      <h3 className="mb-4 text-sm font-medium text-text-secondary">
         各行为标签胜率
       </h3>
       <ResponsiveContainer width="100%" height={300}>

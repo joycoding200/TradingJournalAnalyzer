@@ -39,10 +39,7 @@ export default function SymbolSummaryTable({ data }: SymbolSummaryTableProps) {
 
   if (!data || data.length === 0) {
     return (
-      <div
-        className="text-sm py-6 text-center rounded-lg"
-        style={{ color: "var(--text-secondary)" }}
-      >
+      <div className="rounded-lg py-6 text-center text-sm text-text-secondary">
         暂无交易数据
       </div>
     );
@@ -74,18 +71,17 @@ export default function SymbolSummaryTable({ data }: SymbolSummaryTableProps) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+      <table className="w-full border-collapse text-sm">
         <thead>
-          <tr style={{ borderBottom: `1px solid var(--border)` }}>
+          <tr className="border-b border-border">
             {COLUMNS.map((col) => (
               <th
                 key={col.key}
                 onClick={() => handleSort(col.key)}
-                className="py-2 px-3 text-left cursor-pointer select-none whitespace-nowrap"
-                style={{ color: "var(--text-secondary)", fontSize: "0.75rem", fontWeight: 500 }}
+                className="cursor-pointer select-none whitespace-nowrap px-3 py-2 text-left text-xs font-medium text-text-secondary hover:text-text-primary"
               >
                 {col.label}
-                <span style={{ opacity: 0.5 }}>{sortIndicator(col.key)}</span>
+                <span className="opacity-50">{sortIndicator(col.key)}</span>
               </th>
             ))}
           </tr>
@@ -94,35 +90,30 @@ export default function SymbolSummaryTable({ data }: SymbolSummaryTableProps) {
           {sorted.map((item) => (
             <tr
               key={item.symbol}
-              style={{ borderBottom: `1px solid var(--border)` }}
-              className="hover:brightness-110"
+              className="border-b border-border transition-[filter] hover:brightness-110"
             >
-              <td
-                className="py-2 px-3 font-medium"
-                style={{ color: "var(--text-primary)" }}
-              >
+              <td className="px-3 py-2 font-medium text-text-primary">
                 {item.symbol}
               </td>
-              <td className="py-2 px-3" style={{ color: "var(--text-secondary)" }}>
+              <td className="px-3 py-2 text-text-secondary">
                 {item.trade_count}
               </td>
-              <td className="py-2 px-3" style={{ color: "var(--text-secondary)" }}>
+              <td className="px-3 py-2 text-text-secondary">
                 {formatPct(item.win_rate)}
               </td>
               <td
-                className="py-2 px-3 font-medium"
-                style={{
-                  color:
-                    item.total_pnl > 0
-                      ? "var(--success)"
-                      : item.total_pnl < 0
-                        ? "var(--danger)"
-                        : "var(--text-secondary)",
-                }}
+                className={[
+                  "px-3 py-2 font-medium",
+                  item.total_pnl > 0
+                    ? "text-success"
+                    : item.total_pnl < 0
+                      ? "text-danger"
+                      : "text-text-secondary",
+                ].join(" ")}
               >
                 {formatMoney(item.total_pnl)}
               </td>
-              <td className="py-2 px-3" style={{ color: "var(--text-secondary)" }}>
+              <td className="px-3 py-2 text-text-secondary">
                 {item.avg_holding_days.toFixed(1)}天
               </td>
             </tr>
