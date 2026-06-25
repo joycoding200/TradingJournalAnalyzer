@@ -75,7 +75,15 @@ export default function AddFileModal({ analysisId, onClose, onSuccess }: Props) 
       await confirmFormat(result.raw_file_id, sourceType);
 
       setStatus("正在导入交易记录...");
-      await importTrades(result.raw_file_id);
+      const importResult = await importTrades(result.raw_file_id);
+      const { imported_count, skipped_count } = importResult;
+
+      if (skipped_count > 0) {
+        toast.addToast(
+          "info",
+          `已导入 ${imported_count} 笔交易，跳过 ${skipped_count} 笔重复记录`
+        );
+      }
 
       setStatus("正在添加到分析...");
       await linkFilesToAnalysis(analysisId, [result.raw_file_id]);
