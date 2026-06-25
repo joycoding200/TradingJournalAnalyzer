@@ -1,23 +1,23 @@
 #!/bin/bash
 # ============================================================
-# TradingJournalAnalyzer — 本地构建 + rsync 部署（推荐）
+# TradingJournalAnalyzer — 本地构建 + rsync 全量代码部署
 # ============================================================
-# 比 local-push.sh 更快：前端在本地 build，rsync 传到服务器
-# 服务器不需要装 Node.js，部署时间从 30-60s 降到 10-20s
-#
 # 用法：
-#   bash deploy/local-deploy.sh              # 默认：build + push + deploy
-#   bash deploy/local-deploy.sh --skip-build # 跳过前端构建（dist/ 已是最新）
-#   bash deploy/local-deploy.sh --no-push    # 不 git push，只部署当前 dist/
-#   bash deploy/local-deploy.sh --branch dev # 部署 dev 分支
+#   bash deploy/local-deploy.sh                 # 完整流程
+#   bash deploy/local-deploy.sh --skip-build    # 跳过 npm build
+#   bash deploy/local-deploy.sh --dry-run       # 只显示 rsync 影响不实际执行
+#
+# 工作流程：
+#   1. 本地构建前端 → 2. rsync 整个项目（含源码+dist）到服务器
+#   → 3. SSH 触发服务器端更新（pip install + 备份 + alembic + 重启 + 健康检查）
 # ============================================================
 set -euo pipefail
 
-# ============ 配置区（按实际修改） ============
+# ============ 配置区 ============
 SERVER_USER="root"
-SERVER_HOST="你的服务器公网IP"
+SERVER_HOST="47.109.159.232"
 PROJECT_PATH="/opt/TradingJournalAnalyzer"
-# =============================================
+# ================================
 
 G='\033[0;32m'; Y='\033[0;33m'; R='\033[0;31m'; B='\033[0;34m'; N='\033[0m'
 log()  { echo -e "${G}[deploy]${N} $1"; }
@@ -31,63 +31,86 @@ START_TIME=$SECONDS
 
 # 解析参数
 SKIP_BUILD=false
-DO_PUSH=true
-BRANCH="main"
+DRY_RUN=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-build) SKIP_BUILD=true; shift ;;
-        --no-push)    DO_PUSH=false; shift ;;
-        --branch)     BRANCH="$2"; shift 2 ;;
+        --dry-run)    DRY_RUN=true; shift ;;
         *) err "未知参数: $1"; exit 1 ;;
     esac
 done
 
 # ---- 1. 本地构建前端 ----
 if [ "$SKIP_BUILD" = false ]; then
-    step "1/4" "本地构建前端..."
+    step "1/3" "本地构建前端..."
     cd "$PROJECT_DIR/frontend"
-
-    # 确保依赖安装
     if [ ! -d node_modules ]; then
         log "安装 npm 依赖..."
         npm install
     fi
-
-    # 生产构建（VITE_API_BASE 不设置 → 默认空字符串 → 走相对路径 → nginx 反代）
     log "VITE_API_BASE 不设置，前端走相对路径，依赖 nginx /api 反代"
     npm run build
     cd "$PROJECT_DIR"
     log "前端构建完成: frontend/dist/"
 else
-    step "1/4" "跳过前端构建"
+    step "1/3" "跳过前端构建（使用已有 dist/）"
 fi
 echo ""
 
-# ---- 2. rsync 前端 dist/ 到服务器 ----
-step "2/4" "上传前端到服务器..."
+# ---- 2. rsync 整个项目到服务器 ----
+step "2/3" "同步代码到服务器..."
+SSH_TARGET="${SERVER_USER}@${SERVER_HOST}:${PROJECT_PATH}/"
+
+RSYNC_EXCLUDES=(
+    --exclude='.git'
+    --exclude='__pycache__'
+    --exclude='*.pyc'
+    --exclude='*.pyo'
+    --exclude='frontend/node_modules'
+    --exclude='backend/.venv'
+    --exclude='backend/venv'
+    --exclude='backend/uploads'      # 用户数据，不过期
+    --exclude='.env'                 # 生产环境配置，不覆盖
+    --exclude='.claude'
+)
+
+if [ "$DRY_RUN" = true ]; then
+    log "DRY RUN — 仅列出会被同步的文件："
+    rsync -avz --delete --dry-run \
+        "${RSYNC_EXCLUDES[@]}" \
+        "$PROJECT_DIR/" \
+        "$SSH_TARGET" \
+        | grep -v '/$' | head -50
+    echo "    ..."
+    log "DRY RUN 完成，未实际传输"
+    exit 0
+fi
+
 rsync -avz --delete \
-    "$PROJECT_DIR/frontend/dist/" \
-    "${SERVER_USER}@${SERVER_HOST}:${PROJECT_PATH}/frontend/dist/"
-log "前端已上传"
-echo ""
+    "${RSYNC_EXCLUDES[@]}" \
+    "$PROJECT_DIR/" \
+    "$SSH_TARGET"
 
-# ---- 3. git push ----
-if [ "$DO_PUSH" = true ]; then
-    step "3/4" "推送代码到 GitHub (${BRANCH})..."
-    git push origin "$BRANCH" || { err "git push 失败"; exit 1; }
+log "代码同步完成"
+
+# 检查服务器端 deploy/update.sh 是否存在
+if ssh "${SERVER_USER}@${SERVER_HOST}" "test -f ${PROJECT_PATH}/deploy/update.sh"; then
+    log "服务器端 update.sh 存在"
 else
-    step "3/4" "跳过 git push"
+    err "服务器上找不到 ${PROJECT_PATH}/deploy/update.sh！"
+    echo "  请先手动在服务器上创建项目目录并上传初始代码"
+    exit 1
 fi
 echo ""
 
-# ---- 4. SSH 触发服务器更新（仅后端） ----
-step "4/4" "触发服务器更新..."
+# ---- 3. SSH 触发服务器端更新 ----
+step "3/3" "触发服务器端更新..."
 ssh "${SERVER_USER}@${SERVER_HOST}" \
-    "cd ${PROJECT_PATH} && bash deploy/update.sh --skip-frontend"
+    "bash ${PROJECT_PATH}/deploy/update.sh"
 
 ELAPSED=$((SECONDS - START_TIME))
 echo ""
 log "部署完成！耗时 ${ELAPSED}s"
-log "  分支: ${BRANCH}"
-log "  前端: 本地构建 + rsync"
-log "  后端: git pull + pip install + alembic + restart"
+log "  前端构建: $([ "$SKIP_BUILD" = true ] && echo '跳过' || echo '已构建')"
+log "  代码同步: rsync 全量（排除 node_modules/.venv/uploads/.env/.git）"
+log "  服务端:   pip install + 备份 + alembic + 重启 + 健康检查"
