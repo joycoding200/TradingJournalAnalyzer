@@ -20,6 +20,7 @@ class RawFile(Base):
     asset_type = Column(String(20), nullable=True)
     file_path = Column(String(1000), nullable=True)  # rel path under backend/uploads/
     file_size = Column(Integer, nullable=True)         # bytes
+    content_hash = Column(String(64), nullable=True)  # SHA256 hex digest
     uploaded_at = Column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
         server_default=sa.func.now()
