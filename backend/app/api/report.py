@@ -205,24 +205,22 @@ async def generate_report(
         results_by_pos[i] = results
         patterns_map[i] = [(r.pattern_name, r.confidence) for r in results]
 
-    # Build the insight data from the SAME engine the /insight endpoint uses
-    # (compute_insight → analyze_by_category). Previously this called
-    # InsightEngine.analyze (single primary-pattern bucketing), which produced
-    # a DIFFERENT pattern breakdown than the insight panel — the AI report
-    # could name a "best pattern" the panel excluded (count < 5) or attribute
-    # PnL differently (single-bucket vs multi-bucket). Reusing compute_insight
-    # guarantees the AI reasons over the same patterns/counts/best_pattern the
-    # user sees. See TestReportInsightConsistency.
-    from app.engine.compute import _build_category_map, compute_insight
-
-    category_map = _build_category_map(
-        positions, trades, market_data, precomputed=results_by_pos
-    )
-    insight_response = compute_insight(positions, trades, category_map)
-    # compute_insight returns InsightResponse; feed its flattened patterns list
-    # (all dimensions combined) to the prompt builder. best/worst/baseline are
-    # also available if future prompt enrichment needs them.
-    insight_items = insight_response.patterns
+    # Prefer the cached insight snapshot so the AI report reasons over the
+    # EXACT same patterns the /insight panel shows (which also reads the
+    # snapshot). Recomputing here with current market data diverges from the
+    # snapshot (built at run_analysis time) whenever market data shifts
+    # between calls — the source of the report/insight patterns flake. Only
+    # legacy analyses without a snapshot fall back to recomputation.
+    # See TestReportInsightConsistency.
+    if analysis.insight_snapshot:
+        from app.schemas.analysis import InsightResponse
+        insight_items = InsightResponse(**analysis.insight_snapshot).patterns
+    else:
+        from app.engine.compute import _build_category_map, compute_insight
+        category_map = _build_category_map(
+            positions, trades, market_data, precomputed=results_by_pos
+        )
+        insight_items = compute_insight(positions, trades, category_map).patterns
 
     # WhatIf uses all patterns (not just primary)
     patterns_map_names: dict[int, list[str]] = {

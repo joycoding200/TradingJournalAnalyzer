@@ -299,9 +299,14 @@ class TestReportInsightConsistency:
             )
 
     def test_report_uses_compute_insight_not_analyze(self, client, monkeypatch):
-        """The report pipeline must call compute_insight (the shared engine),
-        not the divergent InsightEngine.analyze. Spy on both to enforce the
-        unified data source at the call-graph level."""
+        """The report pipeline must draw insight patterns from the SAME source
+        the /insight panel uses — never the divergent InsightEngine.analyze.
+
+        With a snapshot (the normal case: run_analysis precomputes it), the
+        report reads analysis.insight_snapshot directly, so it does NOT call
+        compute_insight and must not call InsightEngine.analyze either. When no
+        snapshot exists (legacy analysis), it falls back to compute_insight.
+        """
         from app.engine import compute as compute_mod
         from app.engine import insight as insight_mod
 
@@ -335,9 +340,49 @@ class TestReportInsightConsistency:
             )
             assert gen.status_code == 201, gen.text
 
-        assert compute_calls["compute_insight"] >= 1, (
-            "report generation must call compute_insight (shared engine)"
-        )
+        # run_analysis precomputes insight_snapshot, so the report reads it
+        # directly and does NOT recompute. Either way the divergent analyze
+        # path must never run.
         assert compute_calls["analyze"] == 0, (
             "report generation must NOT call the divergent InsightEngine.analyze"
+        )
+
+    def test_report_recomputes_insight_when_no_snapshot(self, client, db_session, monkeypatch):
+        """Legacy analyses without insight_snapshot must fall back to the shared
+        compute_insight engine (still the unified source, not InsightEngine.analyze)."""
+        from app.engine import compute as compute_mod
+        from app.models.analysis import Analysis
+
+        headers = get_auth_header(client, "compute_insight_nosnap@test.com")
+        raw_file_id = import_trades(client, headers)
+        analysis_id = run_analysis(client, headers, raw_file_id)
+
+        # Drop the snapshot to force the slow path.
+        db_session.rollback()
+        analysis = db_session.query(Analysis).filter_by(id=analysis_id).first()
+        analysis.insight_snapshot = None
+        db_session.commit()
+
+        compute_calls = {"compute_insight": 0}
+        orig_compute_insight = compute_mod.compute_insight
+
+        def spy_compute_insight(*args, **kwargs):
+            compute_calls["compute_insight"] += 1
+            return orig_compute_insight(*args, **kwargs)
+
+        monkeypatch.setattr(compute_mod, "compute_insight", spy_compute_insight)
+
+        with patch("app.api.report.get_llm") as mock_get_llm:
+            mock_provider = AsyncMock()
+            mock_provider.generate = AsyncMock(return_value=MOCK_REPORT)
+            mock_get_llm.return_value = mock_provider
+            gen = client.post(
+                "/api/report/generate",
+                headers=headers,
+                json={"analysis_id": analysis_id},
+            )
+            assert gen.status_code == 201, gen.text
+
+        assert compute_calls["compute_insight"] >= 1, (
+            "report generation with no snapshot must fall back to compute_insight"
         )
