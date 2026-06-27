@@ -264,9 +264,24 @@ def get_stats(
     """Compute KPI stats and positions for the analysis."""
     analysis = _load_analysis(analysis_id, current_user.id, db)
 
-    # Fast path: return pre-computed snapshot
+    # Fast path: return pre-computed snapshot.
+    # Self-heal: a legacy 12-field partial snapshot (written before the
+    # model_dump() fix) is truthy but lacks required fields (positions,
+    # max_win, max_loss, consecutive_losses, …), so StatsResponse(**snapshot)
+    # raises ValidationError → 422 forever. Catch it, drop the stale snapshot,
+    # and fall through to the slow path, which recomputes AND overwrites a
+    # complete snapshot — healing the analysis for all future requests. See
+    # test_stale_partial_snapshot_self_heals.
     if analysis.stats_snapshot:
-        return StatsResponse(**analysis.stats_snapshot)
+        try:
+            return StatsResponse(**analysis.stats_snapshot)
+        except Exception:
+            logger.warning(
+                "stale/incomplete stats_snapshot for analysis %s, recomputing",
+                analysis.id,
+            )
+            analysis.stats_snapshot = None
+            # Fall through to slow path (no return here).
 
     # Slow path: compute on-demand (legacy analyses without snapshots, or when
     # run_analysis's compute_all failed at creation time — e.g. mootdx TCP errors

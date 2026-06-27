@@ -631,3 +631,59 @@ class TestSnapshotRoundTrip:
         )
         assert second.json()["positions"] == first.json()["positions"]
         assert second.json()["total_pnl"] == first.json()["total_pnl"]
+
+    def test_stale_partial_snapshot_self_heals(self, client, db_session):
+        """A truthy but INCOMPLETE legacy snapshot must self-heal, not 422.
+
+        Distinct from snapshot=None (which skips the fast path entirely): a
+        legacy 12-field partial dict is truthy, so the fast path runs
+        ``StatsResponse(**snapshot)`` and hits ValidationError on the missing
+        required fields (positions, max_win, consecutive_losses, ...). Without
+        the self-heal the analysis 422s forever — the exact存量脏快照 scenario
+        that the model_dump() fix does NOT repair (it only governs new writes).
+        The fast path must catch the ValidationError, drop the stale snapshot,
+        and fall through to the slow path, which recomputes AND overwrites a
+        complete snapshot.
+        """
+        analysis = (
+            db_session.query(Analysis)
+            .filter(Analysis.id == self.analysis_id)
+            .first()
+        )
+        # The legacy 12-field shape: truthy, but missing every required field
+        # that has no default (positions, max_win, max_loss, consecutive_losses).
+        analysis.stats_snapshot = {
+            "total_trades": 4,
+            "total_positions": 2,
+            "win_count": 1,
+            "win_rate": 0.5,
+            "total_pnl": -216.0,
+            "avg_holding_days": 3.5,
+        }
+        db_session.commit()
+
+        # Before self-heal: fast path raises ValidationError → 422.
+        # After self-heal: catches it, falls back to slow path → 200.
+        resp = client.get(
+            f"/api/analysis/{self.analysis_id}/stats", headers=self.headers
+        )
+        assert resp.status_code == 200, (
+            f"stale partial snapshot should self-heal, got {resp.status_code}: {resp.text}"
+        )
+
+        # The slow path must have overwritten the stale snapshot with a
+        # complete one, so a subsequent fast-path request works cleanly.
+        db_session.expire_all()
+        analysis = (
+            db_session.query(Analysis)
+            .filter(Analysis.id == self.analysis_id)
+            .first()
+        )
+        snapshot = analysis.stats_snapshot
+        assert "positions" in snapshot, (
+            "slow path did not overwrite the stale partial snapshot"
+        )
+        again = client.get(
+            f"/api/analysis/{self.analysis_id}/stats", headers=self.headers
+        )
+        assert again.status_code == 200
