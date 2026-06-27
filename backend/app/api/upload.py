@@ -303,7 +303,13 @@ def clear_trades(
     """Permanently delete all trading data for the current user.
 
     Deletes in FK-safe order: reports → analyses (join table + rows) →
-    trades → consent_log → raw files. This is irreversible.
+    trades → raw files. This is irreversible.
+
+    consent_log is intentionally NOT deleted: it is an immutable compliance
+    audit trail (see model docstring). Once a user consents to contribute a
+    case, that consent must remain on record to prove the case in the library
+    was authorized — clearing the user's own trading data cannot revoke that.
+    Decline records are likewise retained as evidence of the choice.
     """
     user_id = current_user.id
 
@@ -325,10 +331,7 @@ def clear_trades(
     # 4. Trades
     db.query(Trade).filter(Trade.user_id == user_id).delete(synchronize_session=False)
 
-    # 5. ConsentLog — audit trail (must delete before RawFiles due to FK cascade)
-    db.query(ConsentLog).filter(ConsentLog.user_id == user_id).delete(synchronize_session=False)
-
-    # 6. RawFiles — delete files from disk first, then rows
+    # 5. RawFiles — delete files from disk first, then rows
     raw_files = db.query(RawFile).filter(RawFile.user_id == user_id).all()
     for rf in raw_files:
         _delete_raw_file(rf)

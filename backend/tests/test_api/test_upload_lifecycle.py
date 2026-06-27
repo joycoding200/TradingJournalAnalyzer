@@ -123,13 +123,53 @@ class TestClearTrades:
         assert db_session.query(AnalysisFile).count() == 0  # join table cleared
         assert db_session.query(Analysis).filter_by(user_id=user_id).count() == 0
         assert db_session.query(Trade).filter_by(user_id=user_id).count() == 0
-        assert db_session.query(ConsentLog).filter_by(user_id=user_id).count() == 0
+        # consent_log is NOT cleared: it is an immutable compliance audit trail.
+        # (No rows exist for this fixture, so count stays 0 — the behavioral
+        # retention is asserted in test_clear_trades_preserves_consent_log.)
         assert db_session.query(RawFile).filter_by(user_id=user_id).count() == 0
 
         # The user's upload directory is removed
         from app.api.upload import UPLOAD_ROOT
 
         assert not (UPLOAD_ROOT / user_id).exists()
+
+    def test_clear_trades_preserves_consent_log(self, client, db_session):
+        """consent_log must survive clear_trades — it is immutable compliance
+        evidence. A contributed case stays in the library; the consent that
+        authorized it cannot be erased by clearing the user's own trading data.
+        Decline records are likewise retained as evidence of the choice.
+
+        Regression: clear_trades used to physically delete ConsentLog rows,
+        destroying the audit trail it was designed to keep.
+        """
+        headers = _register(client, "consent_keep@test.com")
+        raw_file_id, analysis_id, _ = _full_setup(client, headers)
+        user_id = _user_id_from_headers(headers)
+
+        # Seed one agree + one decline record against this user's analysis.
+        db_session.add(
+            ConsentLog(user_id=user_id, analysis_id=analysis_id, consented=True)
+        )
+        db_session.add(
+            ConsentLog(user_id=user_id, analysis_id=analysis_id, consented=False)
+        )
+        db_session.commit()
+
+        resp = client.delete("/api/upload/trades", headers=headers)
+        assert resp.status_code == 200
+
+        _refresh(db_session)
+        # Both consent rows survive the wipe.
+        rows = (
+            db_session.query(ConsentLog)
+            .filter_by(user_id=user_id)
+            .order_by(ConsentLog.created_at)
+            .all()
+        )
+        assert len(rows) == 2, (
+            "consent_log must be preserved across clear_trades (audit trail)"
+        )
+        assert {r.consented for r in rows} == {True, False}
 
     def test_clear_trades_isolates_other_users(self, client, db_session):
         """Deleting A's data must not touch B's data."""
