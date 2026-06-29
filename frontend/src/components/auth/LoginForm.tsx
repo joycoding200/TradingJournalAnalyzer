@@ -88,7 +88,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {error && (
-        <div className="rounded-lg bg-danger/10 p-3 text-sm text-danger">
+        <div id="login-error" role="alert" className="rounded-lg bg-danger/10 p-3 text-sm text-danger">
           <p className="mb-1">{error}</p>
           <p className="text-text-secondary">
             还没有账号？<Link to="/register" className="text-accent underline">立即注册</Link>
@@ -120,6 +120,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         placeholder={mode === "email" ? "邮箱" : "11位手机号"}
         value={account}
         onChange={(e) => setAccount(e.target.value)}
+        aria-label={mode === "email" ? "邮箱" : "手机号"}
+        aria-invalid={!!error}
+        aria-describedby={error ? "login-error" : undefined}
         required
         maxLength={mode === "phone" ? 11 : undefined}
       />
@@ -129,6 +132,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           placeholder="密码（至少8位）"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          aria-label="密码"
           required
           minLength={8}
           className="pr-10"

@@ -99,7 +99,7 @@ export default function RegisterForm({ onSuccess }: RegisterFormProps) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {error && (
-        <div className="rounded-lg bg-danger/10 p-3 text-sm text-danger">
+        <div id="register-error" role="alert" className="rounded-lg bg-danger/10 p-3 text-sm text-danger">
           <p className="mb-1">{error}</p>
           {error.includes("已被注册") && (
             <p className="text-text-secondary">
@@ -130,15 +130,21 @@ export default function RegisterForm({ onSuccess }: RegisterFormProps) {
 
       {mode === "email" ? (
         <Input type="email" placeholder="邮箱" value={email}
-          onChange={(e) => setEmail(e.target.value)} required />
+          onChange={(e) => setEmail(e.target.value)} aria-label="邮箱"
+          aria-invalid={!!error} aria-describedby={error ? "register-error" : undefined}
+          required />
       ) : (
         <Input type="tel" placeholder="11位手机号" value={phone}
-          onChange={(e) => setPhone(e.target.value)} required maxLength={11} />
+          onChange={(e) => setPhone(e.target.value)} aria-label="手机号"
+          aria-invalid={!!error} aria-describedby={error ? "register-error" : undefined}
+          required maxLength={11} />
       )}
 
       <div className="relative">
         <Input type={showPw ? "text" : "password"} placeholder="密码（至少8位）" value={password}
-          onChange={(e) => setPassword(e.target.value)} required minLength={8} className="pr-10" />
+          onChange={(e) => setPassword(e.target.value)} aria-label="密码"
+          aria-invalid={!!error} aria-describedby={error ? "register-error" : undefined}
+          required minLength={8} className="pr-10" />
         <button
           type="button"
           onClick={() => setShowPw(!showPw)}
