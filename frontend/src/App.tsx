@@ -47,7 +47,7 @@ export default function App() {
                 <Suspense fallback={<PageFallback />}>
                   <Routes>
                     <Route element={<Layout />}>
-                      <Route path="/admin" element={<Admin />} />
+                      <Route path="/admin-7c2b9e" element={<Admin />} />
                       <Route path="/" element={<Landing />} />
                       <Route path="/login" element={<Login />} />
                       <Route path="/register" element={<Register />} />

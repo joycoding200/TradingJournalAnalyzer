@@ -2,7 +2,9 @@
 import io
 import json
 import re
+import time
 import urllib.parse
+from collections import defaultdict
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
@@ -38,6 +40,39 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # When admin_login targets a non-existent or non-admin account, we still
 # run a full bcrypt verify so the response time is indistinguishable.
 _ADMIN_DUMMY_HASH = hash_password("admin-dummy-u3n-mera1i0n-def3ns3")
+
+# ── D3.2: in-memory brute-force lockout ──────────────────────────────
+# Tracks failed login timestamps per username. After 5 failures within a
+# 15-minute window, the account is locked until the window expires.
+# Zero-dependency (no Redis); resets on process restart, which is acceptable
+# — an attacker must restart the attack, and real admins retry from a known
+# network. Lock is keyed by username (not IP) so an attacker cannot bypass
+# by rotating IPs but CAN lock out a real admin (DoS); mitigated by the
+# short 15-min window and the unguessable /admin-7c2b9e route (D3.1).
+_ADMIN_LOCK_THRESHOLD = 5
+_ADMIN_LOCK_WINDOW = 15 * 60  # 15 minutes in seconds
+_admin_failed_attempts: dict[str, list[float]] = defaultdict(list)
+
+
+def _admin_is_locked(username: str) -> bool:
+    """Return True if username has >= threshold failures within the window."""
+    now = time.time()
+    attempts = [t for t in _admin_failed_attempts[username] if now - t < _ADMIN_LOCK_WINDOW]
+    _admin_failed_attempts[username] = attempts
+    return len(attempts) >= _ADMIN_LOCK_THRESHOLD
+
+
+def _admin_record_failure(username: str) -> None:
+    """Record a failed attempt, pruning old entries first."""
+    now = time.time()
+    _admin_failed_attempts[username] = [
+        t for t in _admin_failed_attempts[username] if now - t < _ADMIN_LOCK_WINDOW
+    ] + [now]
+
+
+def _admin_clear_failures(username: str) -> None:
+    """Clear failures after a successful login."""
+    _admin_failed_attempts.pop(username, None)
 
 
 def _safe_filename(name: str) -> str:
@@ -97,18 +132,65 @@ class AnalysisItem(BaseModel):
 # --- Endpoints ---
 
 @router.post("/login")
-@limiter.limit("5/minute")
+# D3.2: raise the IP-level rate limit above the brute-force lockout threshold
+# (5 fails / 15 min) so the per-username lockout — not the IP limiter — is
+# what triggers first. Without this, the limiter fires at exactly 5 attempts
+# and masks the lockout's 429 ("失败次数过多") with its own generic 429.
+@limiter.limit("20/minute")
 def admin_login(request: Request, body: AdminLoginRequest, db: Session = Depends(get_db)):
+    # D3.2: brute-force lockout — check before querying to avoid wasted work.
+    if _admin_is_locked(body.username):
+        raise HTTPException(
+            status_code=429,
+            detail="登录失败次数过多，请 15 分钟后再试",
+        )
+
     user = db.query(User).filter(
         User.email == body.username, User.is_admin == True
     ).first()
+    # Determine the username to record failures against: real admin email if
+    # the account exists, else the supplied username (so an attacker probing
+    # many usernames still accumulates per-username lockout).
+    fail_key = user.email if user else body.username
+
     if user is None:
         # Dummy verify to defeat timing-based admin enumeration
         verify_password(body.password, _ADMIN_DUMMY_HASH)
+        _admin_record_failure(fail_key)
         raise HTTPException(status_code=401, detail="管理员账号或密码错误")
     if not verify_password(body.password, user.password_hash):
+        _admin_record_failure(fail_key)
         raise HTTPException(status_code=401, detail="管理员账号或密码错误")
-    return {"access_token": create_token(user.id, scope="admin"), "token_type": "bearer"}
+
+    # D3.3: record login audit trail (clear failures first).
+    _admin_clear_failures(user.email)
+    client_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or request.client.host if request.client else ""
+    )
+    from datetime import datetime, timezone
+    prev_login_at = user.last_login_at
+    prev_login_ip = user.last_login_ip
+    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_ip = client_ip
+    db.commit()
+
+    # Return previous login info so the admin dashboard can show "上次登录"
+    # without a separate round-trip. Current login is the one just recorded.
+    def _fmt(dt) -> str:
+        if not dt:
+            return ""
+        if dt.tzinfo is None:
+            from datetime import timezone as _tz
+            dt = dt.replace(tzinfo=_tz.utc)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+    return {
+        "access_token": create_token(user.id, scope="admin"),
+        "token_type": "bearer",
+        "last_login_at": _fmt(prev_login_at),
+        "last_login_ip": prev_login_ip or "",
+    }
 
 
 @router.get("/users")

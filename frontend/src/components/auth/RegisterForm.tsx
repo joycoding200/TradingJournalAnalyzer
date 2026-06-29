@@ -40,6 +40,7 @@ export default function RegisterForm({ onSuccess }: RegisterFormProps) {
   const [mode, setMode] = useState<"email" | "phone">("email");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
@@ -79,7 +80,8 @@ export default function RegisterForm({ onSuccess }: RegisterFormProps) {
       const token = await registerApi(
         mode === "email" ? email : "",
         mode === "phone" ? phone : "",
-        password
+        password,
+        nickname.trim()
       );
       login(token);
       toast.addToast("success", "注册成功");
@@ -139,6 +141,15 @@ export default function RegisterForm({ onSuccess }: RegisterFormProps) {
           aria-invalid={!!error} aria-describedby={error ? "register-error" : undefined}
           required maxLength={11} />
       )}
+
+      <Input
+        type="text"
+        placeholder="昵称（选填，2-20字）"
+        value={nickname}
+        onChange={(e) => setNickname(e.target.value)}
+        aria-label="昵称"
+        maxLength={20}
+      />
 
       <div className="relative">
         <Input type={showPw ? "text" : "password"} placeholder="密码（至少8位）" value={password}

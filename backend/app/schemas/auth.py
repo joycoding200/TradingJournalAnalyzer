@@ -9,6 +9,7 @@ class RegisterRequest(BaseModel):
     email: Optional[EmailStr] = None
     phone: str = ""
     password: str
+    nickname: str = ""
 
     @field_validator("email", mode="before")
     @classmethod
@@ -24,6 +25,16 @@ class RegisterRequest(BaseModel):
             # Chinese mobile: 1[3-9]xxxxxxxxx
             if not re.match(r"^1[3-9]\d{9}$", v):
                 raise ValueError("手机号格式不正确，请输入11位中国大陆手机号")
+        return v
+
+    @field_validator("nickname")
+    @classmethod
+    def validate_nickname(cls, v: str) -> str:
+        """Optional nickname (2-20 chars). Empty string means 'auto-generate'."""
+        if v:
+            v = v.strip()
+            if len(v) < 2 or len(v) > 20:
+                raise ValueError("昵称长度需为2-20个字符")
         return v
 
 

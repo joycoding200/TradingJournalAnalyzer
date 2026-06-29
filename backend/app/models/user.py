@@ -29,6 +29,9 @@ class User(Base):
     nickname = Column(String(50), nullable=True)
     is_admin = Column(Boolean, default=False, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    # Admin login audit trail (D3.3). Only updated on admin login.
+    last_login_at = Column(DateTime, nullable=True)
+    last_login_ip = Column(String(45), nullable=True)
     created_at = Column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
         server_default=sa.func.now()

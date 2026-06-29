@@ -78,7 +78,7 @@ def register(request: Request, body: RegisterRequest, response: Response, db: Se
     user = User(
         email=body.email or None,
         phone=body.phone or None,
-        nickname=generate_nickname(),
+        nickname=body.nickname or generate_nickname(),
         password_hash=hash_password(body.password),
     )
     db.add(user)

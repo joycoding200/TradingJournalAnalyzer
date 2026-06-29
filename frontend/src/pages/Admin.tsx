@@ -20,6 +20,7 @@ export default function Admin() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [analyses, setAnalyses] = useState<AnalysisItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastLogin, setLastLogin] = useState<{ at: string; ip: string } | null>(null);
 
   const adminHeaders = (extra?: Record<string, string>) => ({
     Authorization: `Bearer ${token}`,
@@ -63,6 +64,10 @@ export default function Admin() {
       const data = await resp.json();
       setToken(data.access_token);
       localStorage.setItem("admin_token", data.access_token);
+      // D3.3: capture previous login info returned by the backend
+      if (data.last_login_at) {
+        setLastLogin({ at: data.last_login_at, ip: data.last_login_ip || "" });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
     }
@@ -112,12 +117,19 @@ export default function Admin() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
         <h1 className="text-xl font-semibold">管理员面板</h1>
-        <button onClick={() => { setToken(""); localStorage.removeItem("admin_token"); }}
-          className="text-xs text-text-secondary bg-transparent border-0 cursor-pointer">
-          退出
-        </button>
+        <div className="flex items-center gap-3">
+          {lastLogin?.at && (
+            <span className="text-xs text-text-secondary">
+              上次登录：{lastLogin.at}{lastLogin.ip ? ` · ${lastLogin.ip}` : ""}
+            </span>
+          )}
+          <button onClick={() => { setToken(""); localStorage.removeItem("admin_token"); setLastLogin(null); }}
+            className="text-xs text-text-secondary bg-transparent border-0 cursor-pointer">
+            退出
+          </button>
+        </div>
       </div>
 
       {/* Search */}
