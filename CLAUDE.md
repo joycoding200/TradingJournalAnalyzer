@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **项目经验必读**: 所有涉及交割单解析（SmartParser）、PnL/费用计算、文件上传识别的开发，必须先参考 `PROJECT_EXPERIENCE.md`（记录真实券商导出踩坑：GBK 编码、伪 `.xls` 文本、`="..."` 外壳、费用列误判、模拟数据与真实数据脱节等），避免重复踩坑。
 
+**AI 输入契约必读**: 所有修改 AI 报告生成（`app/ai/prompt.py`、`app/api/report.py` 的 `_build_analysis_data`）的开发，必须先参考 `docs/superpowers/AI_INPUT_CONTRACT.md`（哪些指标喂给 AI、按什么格式渲染、依据什么原则筛选）。新增字段须采集/渲染/契约三同步。
+
 ## 项目概述
 
 TradeDoctor（交易诊断助手）— A 股散户上传交割单，系统重建持仓、识别行为、归因盈亏、回测策略、生成 AI 诊断报告。已进入"值得长期使用的交易复盘工具"阶段。

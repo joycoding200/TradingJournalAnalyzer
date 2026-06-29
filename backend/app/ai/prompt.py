@@ -20,6 +20,8 @@ SYSTEM_PROMPT = """你是 TradeDoctor（交易诊断助手）的 AI 交易教练
 3. **建设性。** 指出问题的同时，给出可执行的改善建议。
 4. **简明扼要。** 用简洁的段落呈现，避免冗长。
 5. **面向散户。** 假设读者是一个炒股 3-5 年的老股民，不是金融科班出身，也不是小白。用茶馆聊天、股友交流的口吻写，三句话以内说清楚一件事。避免"建议您"、"请注意"等公文腔，直接用"你"。
+6. **效率优先于规模。** 评价一个标签好坏时，单笔平均收益率（效率）比总盈亏绝对额更能反映交易质量。高效率的小额标签也要纳入，不要被大额低效标签挤掉。
+7. **区分确定结论与低置信度推测。** 数据中标签分四维度：交易行为/市场环境/交易结果是可观测事实；心理推测维度（标签名含 PSY_ 前缀，如 PSY_FOMO，置信度低）是统计推断。心理推测可在报告中提及，但必须明确标注"（推测，置信度低）"，不得当作确定结论。
 
 ## 语言要求（重要）
 - **必须全部使用中文输出。** 禁止在正文中使用英文术语、英文缩写或中英混杂。
@@ -31,13 +33,13 @@ SYSTEM_PROMPT = """你是 TradeDoctor（交易诊断助手）的 AI 交易教练
 一句话概括当前交易状态。
 
 ### 优势清单
-做得好的 2-3 个交易行为，每条包含：
+你做得好的交易行为（覆盖各维度中有代表性的盈利标签，优先纳入单笔平均收益率最高即效率最高的，不要只按总盈亏绝对额排序而漏掉小额高效的标签）。每条包含：
 - 行为名称（中文，如：及时止损、顺势交易、仓位管理）
 - 数据支撑（如：止损交易平均亏损仅 X%，远低于不止损交易）
 - 一句话肯定
 
 ### 风险警示
-最危险的 2-3 个交易行为，每条包含：
+最危险的交易行为（覆盖各维度中有代表性的亏损/拖累标签，优先纳入单笔平均亏损率最高即效率最差的，不要只按总盈亏绝对额排序而漏掉小额但低效的标签）。每条包含：
 - 行为名称（中文）
 - 数据支撑（如：该行为贡献了总亏损的 X%）
 - 潜在原因推测
@@ -89,31 +91,59 @@ def build_user_prompt(analysis_data: dict) -> str:
     patterns = analysis_data.get("patterns", [])
     if patterns:
         for p in patterns:
+            avg = p.get("avg_pnl_pct")
+            avg_str = f", 单笔均收益{avg * 100:+.2f}%" if avg is not None else ""
+            dim = p.get("dimension")
+            dim_str = f" [{dim}]" if dim else ""
             lines.append(
-                f"- {p['pattern_name']}: {p['count']}次, "
-                f"胜率{p['win_rate']:.1%}, 总盈亏{p['total_pnl']:+.2f}"
+                f"- {p['pattern_name']}{dim_str}: {p['count']}次, "
+                f"胜率{p['win_rate']:.1%}, 总盈亏{p['total_pnl']:+.2f}{avg_str}"
             )
     else:
         lines.append("（暂无行为标签数据）")
 
     lines.append("")
     lines.append("反事实回测（What If）：")
+    lines.append("口径：delta = 移除该行为后的收益率 − 原始收益率。")
+    lines.append("delta 为负 = 移除后少赚，该行为【在帮你赚钱】（利润来源）；")
+    lines.append("delta 为正 = 移除后更赚，该行为【在亏钱】（拖累表现）。")
+    lines.append("正负号代表方向，不可把负数说成“收益增加”。")
     what_if = analysis_data.get("what_if", [])
     if what_if:
         for w in what_if:
             lines.append(
-                f"- 移除 {w['removed_pattern']}: 收益变化 {w['delta']:+.4f}, "
+                f"- 移除 {w['removed_pattern']}: delta {w['delta']:+.4f}, "
                 f"影响度 {w['contribution_pct']:.2f}"
             )
     else:
         lines.append("（暂无回测数据）")
 
+    # AI_INPUT_CONTRACT: 赚钱来源归因（Shapley，各行为对总盈亏的公平贡献，之和=总盈亏）
+    shapley = analysis_data.get("shapley")
+    if shapley:
+        lines.append("")
+        lines.append("赚钱来源分析（Shapley 归因，各行为对总盈亏的公平贡献）:")
+        for s in shapley:
+            lines.append(
+                f"- {s['pattern_name']}: {s['shapley_value']:+.2f}元 "
+                f"({s['pct_of_total']:+.1f}%)"
+            )
+
     # V4.0: risk metrics section
     if any(k in analysis_data for k in ("profit_factor", "max_drawdown", "expectancy")):
         lines.append("")
         lines.append("风险指标：")
+        # AI_INPUT_CONTRACT 护栏：小样本提醒（<5笔），低于此数不评价标签好坏
+        if analysis_data.get("is_small_sample"):
+            lines.append("- ⚠️ 样本不足（有效交易<5笔）：以下指标仅供参考，不据此评价行为好坏")
+        bl = analysis_data.get("baseline_expectancy")
+        if bl is not None:
+            lines.append(f"- 整体预期收益基准（评价各行为盈亏的基准线，>0为正期望）: {bl}%")
         pf = analysis_data.get("profit_factor")
         lines.append(f"- 盈亏比（赚的钱÷亏的钱，>1表示整体盈利）: {'∞（无亏损交易）' if pf is None else f'{pf:.2f}'}")
+        wlr = analysis_data.get("win_loss_ratio")
+        if wlr is not None:
+            lines.append(f"- 损益比（平均单笔盈利÷平均单笔亏损，>1表示赚多亏少）: {wlr:.2f}")
         expect = analysis_data.get("expectancy")
         if expect is not None:
             lines.append(f"- 预期收益（每笔交易的平均预期盈亏百分比）: {expect}%")
@@ -124,6 +154,11 @@ def build_user_prompt(analysis_data: dict) -> str:
         cl = analysis_data.get("consecutive_losses")
         if cl is not None:
             lines.append(f"- 最大连续亏损（连续亏损的最多笔数）: {cl}次")
+        # AI_INPUT_CONTRACT: 盈亏持仓天数对比 — 诊断"死扛"（亏损持仓>盈利持仓说明小亏拖成大亏）
+        awh = analysis_data.get("avg_win_holding_days")
+        alh = analysis_data.get("avg_loss_holding_days")
+        if awh is not None and alh is not None:
+            lines.append(f"- 持仓天数对比（盈利单{awh}天 / 亏损单{alh}天，亏损持仓更久=有死扛倾向）")
         mae = analysis_data.get("avg_mae")
         if mae is not None:
             lines.append(f"- 平均最大不利变动（持仓期间浮亏的最大幅度）: {mae * 100:.1f}%")
@@ -136,6 +171,10 @@ def build_user_prompt(analysis_data: dict) -> str:
         tr = analysis_data.get("total_return_pct")
         if tr is not None:
             lines.append(f"- 总收益率: {tr * 100:.1f}%")
+        pnl_dist = analysis_data.get("pnl_distribution")
+        if pnl_dist:
+            dist_str = "、".join(f"{d['level']}{d['count']}笔" for d in pnl_dist)
+            lines.append(f"- 盈亏量级分布（按单笔盈亏幅度分桶）: {dist_str}")
 
     # V4.0: key trades section
     ps = analysis_data.get("positions_summary")

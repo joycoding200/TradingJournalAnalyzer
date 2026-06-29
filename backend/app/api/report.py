@@ -38,6 +38,22 @@ from app.schemas.report import (
 router = APIRouter(prefix="/api", tags=["report"])
 
 
+# AI_INPUT_CONTRACT: 标签维度归属（中文），用于 prompt 渲染，区分确定结论与心理推测
+_DIM_CN = {
+    "market_env": "市场环境",
+    "behavior": "交易行为",
+    "outcome": "交易结果",
+    "psychology": "心理推测",
+}
+
+
+def _pattern_dimension(pattern_name: str) -> str:
+    """Return Chinese dimension name for a pattern tag."""
+    from app.engine.insight import InsightEngine
+    dim = InsightEngine._dim_for_pattern(pattern_name)
+    return _DIM_CN.get(dim, dim)
+
+
 def _compute_date_segments(trades, gap_days: int = 14) -> str:
     """Compute the actual date range(s) from trade data, detecting gaps.
 
@@ -68,11 +84,12 @@ def _compute_date_segments(trades, gap_days: int = 14) -> str:
     return "、".join(f"{s} 至 {e}" for s, e in segments)
 
 
-def _build_analysis_data(trades, positions, insight_items, whatif_items, stats_data: dict = None, report_date: str = "", date_start: str = "", date_end: str = "") -> dict:
+def _build_analysis_data(trades, positions, insight_items, whatif_items, stats_data: dict = None, report_date: str = "", date_start: str = "", date_end: str = "", baseline_expectancy: float = None, shapley_items: list = None) -> dict:
     """Build the analysis_data dict expected by build_user_prompt.
 
     When stats_data is provided (V4.0), risk metrics and positions summary
-    are included for richer AI diagnosis.
+    are included for richer AI diagnosis. AI_INPUT_CONTRACT 字段：
+    baseline_expectancy（评价基准）、shapley_items（赚钱来源归因）。
     """
     total_trades = len(trades)
     total_positions = len(positions)
@@ -99,6 +116,9 @@ def _build_analysis_data(trades, positions, insight_items, whatif_items, stats_d
                 "count": i.count,
                 "win_rate": i.win_rate,
                 "total_pnl": i.total_pnl,
+                "avg_pnl_pct": i.avg_pnl_pct,
+                # AI_INPUT_CONTRACT: 维度归属，防 AI 漏看某维度、区分确定结论与心理推测
+                "dimension": _pattern_dimension(i.pattern_name),
             }
             for i in insight_items
         ],
@@ -111,6 +131,11 @@ def _build_analysis_data(trades, positions, insight_items, whatif_items, stats_d
             for i in whatif_items
         ],
     }
+    # AI_INPUT_CONTRACT: 评价基准 + 赚钱来源归因
+    if baseline_expectancy is not None:
+        result["baseline_expectancy"] = round(baseline_expectancy, 2)
+    if shapley_items:
+        result["shapley"] = shapley_items
 
     # V4.0: enrich with stats-level risk metrics
     if stats_data:
@@ -214,13 +239,17 @@ async def generate_report(
     # See TestReportInsightConsistency.
     if analysis.insight_snapshot:
         from app.schemas.analysis import InsightResponse
-        insight_items = InsightResponse(**analysis.insight_snapshot).patterns
+        insight_resp = InsightResponse(**analysis.insight_snapshot)
+        insight_items = insight_resp.patterns
+        baseline_expectancy = insight_resp.baseline_expectancy
     else:
         from app.engine.compute import _build_category_map, compute_insight
         category_map = _build_category_map(
             positions, trades, market_data, precomputed=results_by_pos
         )
-        insight_items = compute_insight(positions, trades, category_map).patterns
+        insight_resp = compute_insight(positions, trades, category_map)
+        insight_items = insight_resp.patterns
+        baseline_expectancy = insight_resp.baseline_expectancy
 
     # WhatIf uses all patterns (not just primary)
     patterns_map_names: dict[int, list[str]] = {
@@ -231,6 +260,34 @@ async def generate_report(
     # V4.0: compute stats-level metrics for richer AI prompt
     valid_positions = [p for p in positions if getattr(p, "cost_known", True)]
     valid_count = len(valid_positions)
+
+    # AI_INPUT_CONTRACT: 护栏字段 — 小样本标识（<5笔）+ 盈亏持仓天数对比
+    is_small_sample = valid_count < 5
+    win_positions_h = [p for p in valid_positions if p.pnl > 0]
+    loss_positions_h = [p for p in valid_positions if p.pnl <= 0]
+    avg_win_holding = (
+        sum(p.holding_days for p in win_positions_h) / len(win_positions_h)
+        if win_positions_h else 0.0
+    )
+    avg_loss_holding = (
+        sum(p.holding_days for p in loss_positions_h) / len(loss_positions_h)
+        if loss_positions_h else 0.0
+    )
+
+    # AI_INPUT_CONTRACT: Shapley 归因（招牌功能"赚钱来源分析"，需 valid_positions）
+    from app.engine.attribution import shapley_attribution
+    shapley_values = shapley_attribution(positions, patterns_map_names)
+    total_pnl_for_shapley = sum(p.pnl for p in valid_positions)
+    shapley_summary = sorted(shapley_values.items(), key=lambda x: -x[1])
+    shapley_items = [
+        {
+            "pattern_name": pat,
+            "shapley_value": val,
+            "pct_of_total": round(val / abs(total_pnl_for_shapley) * 100, 1)
+            if total_pnl_for_shapley != 0 else 0.0,
+        }
+        for pat, val in shapley_summary
+    ]
 
     win_positions = [p for p in valid_positions if p.pnl > 0]
     loss_positions = [p for p in valid_positions if p.pnl <= 0]
@@ -298,6 +355,10 @@ async def generate_report(
         "win_loss_ratio": round(win_loss_ratio, 2) if win_loss_ratio is not None else None,
         "total_return_pct": round(total_return_pct, 4),
         "pnl_distribution": pnl_dist,
+        # AI_INPUT_CONTRACT 护栏字段
+        "is_small_sample": is_small_sample,
+        "avg_win_holding_days": round(avg_win_holding, 1),
+        "avg_loss_holding_days": round(avg_loss_holding, 1),
     }
 
     # Build AI prompt with exact dates (so the AI doesn't guess)
@@ -309,6 +370,8 @@ async def generate_report(
         report_date=today_str,
         date_start=date_range_str,  # now contains full segment info
         date_end="",  # no longer used individually
+        baseline_expectancy=baseline_expectancy,
+        shapley_items=shapley_items,
     )
     user_prompt = build_user_prompt(analysis_data)
 
