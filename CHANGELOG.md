@@ -6,6 +6,91 @@
 
 ---
 
+## [V1.1.3] — 2026-06-29
+
+### 概述
+
+本版本是对 `V1.1_IMPROVEMENT_PLAN.md`（前端审查报告）中 **P0 优先级任务**的实施，外加实施过程中发现并修复的 3 个回归/缺陷、1 个 dev 环境陷阱、1 项结构重构。源自一次 Playwright 端到端全流程审查（注册→登录→上传 3 种券商 .xls→分析→报告→历史→管理员→移动端），审查产物归档于 `docs/review/frontend/`。
+
+### 新增功能（P0，4 个 EPIC）
+
+#### 1. 路由补齐与登录回跳（A1）
+
+- `/analysis`、`/report` 无 id 时重定向到 `/history`（之前直接 404）
+- `ProtectedRoute` 把当前 URL 作为 `?redirect=` 传给登录页，登录后回跳原页（防 open redirect：仅允许 `/` 开头且非 `//` 的内部路径）
+- 404 页增加「热门目的地」入口（首页/上传/历史/登录），登录态隐藏登录入口
+
+#### 2. 黄色警告 banner 整改（B1）
+
+- 「N 笔持仓起始于交割单外」警告改为**可折叠徽章**，默认收起、点击展开，不再占用整屏视觉重心
+- 文案中性化：「如需更准确结果，可补传更早期的交割单」（去掉「建议导入更早期以获得完整分析」的归咎语气）
+- 展开后内嵌「一键添加更早的交割单」按钮 → 打开 `AddFileModal`（与顶部「+ 添加交割单」同路径，不跳转 `/upload`）
+
+#### 3. 股票维度盈亏表升级（B2）
+
+- **股票中文名**：`Trade` 表新增 `symbol_name` 字段 + alembic 迁移；SmartParser 识别 `证券名称`/`股票名称` 列（CJK 字符启发式 + 排除代码列/方向列）；`compute_stats` 与 `get_stats` 慢路径聚合时构建 `symbol → name` 映射。华西/中信/天风三券商 100% 命中。
+- **移动端卡片视图**（≤768px）：每只股票一张卡，不再横向溢出
+- **搜索框 + X 清空按钮**：按代码或名称即时过滤，一键清空恢复完整列表
+
+#### 4. 注册/登录一致性与安全（D1）
+
+- 注册/登录 placeholder 统一：「邮箱」/「11位手机号」/「密码（至少8位）」
+- 登录页增加「邮箱登录 | 手机号登录」tab，与注册页对称
+- 邮箱正则严格化：`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`（拒绝 `a@.com` 等畸形值，两表一致）
+- 防账号枚举：登录错误文案统一为「账号或密码错误」，不区分「账号不存在」与「密码错误」
+
+### 修复的 Bug
+
+#### 1. 添加交割单后股票名称全部消失（V1.1.3 引入的回归）
+
+**现象**：通过「+ 添加交割单」上传第二份文件后，股票维度盈亏表所有股票名称消失，刷新页面也无效。
+
+**根因**：`compute.py`（run_analysis 路径）和 `analysis.py`（get_stats 慢路径）**两处各自独立构建 symbol_summary**。P0 只在 `compute.py` 加了 `symbol_name_map`，`link_files_to_analysis` 清空 snapshot 后，下次 GET 走慢路径重算漏了 `symbol_name`，无 name 的 snapshot 覆盖了好的。
+
+**修复**：`get_stats` 慢路径补 `symbol_name_map` 构建。验证：添加文件2 → 18/18 symbols 保留 name（之前 0/18）。
+
+#### 2. AddFileModal 上传后 filenames 不刷新
+
+**现象**：上传文件2 后，header 仍只显示「文件1」，需手动刷新页面才出现「文件1 + 文件2」。
+
+**根因**：`onSuccess` 仅 `invalidateQueries`，但 modal 立即关闭 + `useStats` 有 5 分钟 `staleTime`，background refetch 可能没及时更新 UI。
+
+**修复**：`onSuccess` 改为先 `removeQueries` 再 `invalidateQueries`，强制下次渲染重新请求后端。
+
+#### 3. restart.py 后端启动崩溃（slowapi ModuleNotFoundError）
+
+**根因**：`restart.py` 调用裸 `uvicorn`，PATH 解析到系统级 Python（无 slowapi）而非项目 venv。
+
+**修复**：显式指向 `backend/.venv/{Scripts,bin}/uvicorn`，强制使用项目解释器。
+
+### 重构
+
+#### dedupe symbol_name_map（R1，code review 发现）
+
+`compute.py:225` 和 `analysis.py:307` 原有逐字相同的 5 行 `symbol_name_map` 构建逻辑——正是回归 #1 的根因。抽取为 `common.py:build_symbol_name_map(trades)` 公共函数，两处调用同一实现，杜绝再次漂移。
+
+#### 移除死 prop（R2）
+
+`StatsCards.analysisId` 是 banner 改用 `onAddFile` 后的遗留死代码（声明但从不读）。从 `StatsCards` 接口、`StatsTab` 透传、`Analysis.tsx` 调用点三处移除。
+
+### 文档与沉淀
+
+- **前端审查报告**归档于 `docs/review/frontend/`：Playwright 审查脚本 `audit.py`、22 张截图、`audit_report.json`、`V1.1_IMPROVEMENT_PLAN.md`（5 主题 / 12 EPIC / 47 任务）
+- **PROJECT_EXPERIENCE.md** 新增「uvicorn --reload 僵尸 worker 陷阱」章节：记录调试绕圈 1 小时的根因（`taskkill //IM uvicorn.exe` 只杀 reloader 不杀 worker）、Windows 双进程模型、判定「代码 bug vs 环境假象」的排查清单
+
+### 验证
+
+- SmartParser：华西/中信/天风三券商 388/388 笔交易正确解析证券名称
+- 后端测试：parsers + engine + auth **232/232 通过**
+- 前端 TypeScript：0 错误
+- Playwright 端到端：注册→登录→上传→分析→tab 切换→生成报告→历史全流程通过
+
+### 未做（按用户决策）
+
+- **C1 弹窗时序**（P0）：用户要求「保持现状，用户看报告前需做选择」，未改动 `Report.tsx` 的 consent 弹窗逻辑
+
+---
+
 ## [V1.1.2] — 2026-06-28
 
 ### 概述
