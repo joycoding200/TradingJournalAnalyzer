@@ -103,7 +103,6 @@ export default function Analysis() {
         {activeTab === "stats" && (
           <StatsTab
             stats={stats}
-            analysisId={id}
             onAddFile={() => setShowAddFile(true)}
           />
         )}

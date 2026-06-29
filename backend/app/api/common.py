@@ -49,6 +49,28 @@ def get_raw_file_filenames(raw_file_ids: list[str], db: Session) -> dict[str, st
     return filename_map
 
 
+def build_symbol_name_map(trades: list[Trade]) -> dict[str, str]:
+    """Build {symbol: Chinese name} from trade rows.
+
+    Scans trades in reverse-chronological order and keeps the first non-empty
+    name seen for each symbol. This means a later import carrying the 证券名称
+    column overrides older NULL rows, while symbols whose every trade lacks a
+    name (legacy imports before the symbol_name column) are simply absent.
+
+    Shared by compute_stats (run_analysis path) and get_stats (slow path) so
+    the two aggregation sites cannot drift apart — the previous duplication
+    caused a bug where run_analysis wrote a name-bearing snapshot but the
+    slow path recomputed a nameless one and overwrote it.
+    """
+    name_map: dict[str, str] = {}
+    for t in sorted(trades, key=lambda x: getattr(x, "datetime", None) or "", reverse=True):
+        name = getattr(t, "symbol_name", None)
+        if name and t.symbol not in name_map:
+            name_map[t.symbol] = name
+    return name_map
+
+
+
 def load_trades(analysis: Analysis, user_id: str, db: Session) -> list[Trade]:
     """Load the trades that belong to THIS analysis.
 

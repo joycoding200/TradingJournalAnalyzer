@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.api.common import get_raw_file_ids, get_raw_file_filenames
+from app.api.common import get_raw_file_ids, get_raw_file_filenames, build_symbol_name_map
 from app.engine.attribution import shapley_attribution
 from app.engine.insight import InsightEngine, InsightItem
 from app.engine.mae import compute_mae_mfe_stats
@@ -219,14 +219,8 @@ def compute_stats(
 
     positions = PositionBuilder.build(trades)
 
-    # Build symbol -> Chinese-name lookup from the trade rows. Use the
-    # most recent non-empty name when multiple imports overlap. This is
-    # what gets surfaced in the SymbolSummaryTable.
-    symbol_name_map: dict[str, str] = {}
-    for t in sorted(trades, key=lambda x: getattr(x, "datetime", None) or "", reverse=True):
-        name = getattr(t, "symbol_name", None)
-        if name and t.symbol not in symbol_name_map:
-            symbol_name_map[t.symbol] = name
+    # Build symbol -> Chinese-name lookup (shared with get_stats slow path).
+    symbol_name_map = build_symbol_name_map(trades)
 
     total_trades = len(trades)
     total_positions = len(positions)

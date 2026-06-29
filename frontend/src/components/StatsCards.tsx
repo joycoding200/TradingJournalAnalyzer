@@ -48,8 +48,6 @@ interface StatsCardsProps {
    * page and React Query invalidation refreshes the data automatically.
    */
   onAddFile?: () => void;
-  /** Kept for backward compatibility; ignored when onAddFile is provided. */
-  analysisId?: string;
 }
 
 function formatPct(value: number): string {
@@ -132,7 +130,7 @@ function detailCard(
   );
 }
 
-export default function StatsCards({ stats, onAddFile, analysisId }: StatsCardsProps) {
+export default function StatsCards({ stats, onAddFile }: StatsCardsProps) {
   const unknown = stats.unknown_cost_count ?? 0;
   const [bannerOpen, setBannerOpen] = useState(false);
   const wlr = stats.win_loss_ratio ?? 0;

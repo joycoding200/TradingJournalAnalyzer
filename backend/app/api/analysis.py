@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 
 from app.auth.jwt import get_current_user
-from app.api.common import load_analysis, load_trades, get_raw_file_ids, get_raw_file_filenames
+from app.api.common import load_analysis, load_trades, get_raw_file_ids, get_raw_file_filenames, build_symbol_name_map
 from app.database import get_db
 from app.models.analysis import Analysis, AnalysisFile
 from app.models.trade import Trade
@@ -301,14 +301,8 @@ def get_stats(
     filenames = [filename_map.get(fid, "") for fid in file_ids]
     analysis_filename = filenames[0] if filenames else ""
 
-    # Build symbol -> Chinese-name lookup from the trade rows (mirrors
-    # compute_stats). Prefer the most recent non-empty name so a later
-    # import that carries the name column overrides older NULL rows.
-    symbol_name_map: dict[str, str] = {}
-    for t in sorted(trades, key=lambda x: getattr(x, "datetime", None) or "", reverse=True):
-        name = getattr(t, "symbol_name", None)
-        if name and t.symbol not in symbol_name_map:
-            symbol_name_map[t.symbol] = name
+    # Build symbol -> Chinese-name lookup (shared with compute_stats).
+    symbol_name_map = build_symbol_name_map(trades)
 
     positions = PositionBuilder.build(trades)
 
