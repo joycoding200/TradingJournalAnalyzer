@@ -137,8 +137,14 @@ def _detach_popen(cmd: list[str], log_path: Path, cwd: Path) -> subprocess.Popen
 
 def start_backend() -> int:
     print(f"[2/4] Starting backend :{BACKEND_PORT} ...")
+    # Use the venv's uvicorn explicitly. A bare `uvicorn` on PATH resolves
+    # to whichever interpreter is first on PATH, which may be a system
+    # Python that lacks slowapi/etc. and crashes with ModuleNotFoundError.
+    uvicorn_bin = BACKEND_DIR / ".venv" / ("Scripts" if IS_WINDOWS else "bin") / (
+        "uvicorn.exe" if IS_WINDOWS else "uvicorn"
+    )
     cmd = [
-        "uvicorn", "app.main:app",
+        str(uvicorn_bin), "app.main:app",
         "--host", "0.0.0.0", "--port", str(BACKEND_PORT),
         "--reload",
     ]
