@@ -751,42 +751,34 @@ def get_whatif(
         for i in items
     ]
 
-    # Stop-loss rule simulation (V2.1: intraday-based backtest)
-    stop_loss_sim = None
-    if rule_type == "stop_loss":
+    # ── 规则回测模拟（V1.2.3: 5个规则全算，固定标准档参数）────────────
+    # delta = 模拟后收益率 − 现状收益率，delta>0 = 该规则改善收益
+    def _run_rule(rt, params):
         result = ProfitAttribution.analyze_rule(
-            valid_positions,
-            rule_type="stop_loss",
-            params={"loss_pct": 0.05},
-            market_data=market_data,
+            valid_positions, rule_type=rt, params=params, market_data=market_data
         )
-        if result:
-            stop_loss_sim = RuleSimulationItem(
-                rule=result["rule"],
-                original_return=result["original_return"],
-                what_if_return=result["what_if_return"],
-                delta=result["delta"],
-                affected_positions=result["affected_positions"],
-            )
+        if not result:
+            return None
+        return RuleSimulationItem(
+            rule=result["rule"],
+            original_return=result["original_return"],
+            what_if_return=result["what_if_return"],
+            delta=result["delta"],
+            affected_positions=result["affected_positions"],
+        )
 
-    # V2.1.1: stop-loss applied ONLY to large-loss positions (pnl_pct < -8%).
-    # Answers "if I had set a 5% stop on just the big losers" — the
-    # counterfactual that removing LARGE_LOSS_EXIT cannot provide.
-    stop_loss_large_loss_sim = None
-    large_loss_result = ProfitAttribution.analyze_rule(
-        valid_positions,
-        rule_type="stop_loss_large_loss",
-        params={"loss_pct": 0.05, "large_loss_pct": -0.08},
-        market_data=market_data,
+    # 止损侧：固定8%止损（标准档，原5%偏紧）+ 仅大亏止损
+    stop_loss_sim = _run_rule("stop_loss", {"loss_pct": 0.08})
+    stop_loss_large_loss_sim = _run_rule(
+        "stop_loss_large_loss", {"loss_pct": 0.08, "large_loss_pct": -0.08}
     )
-    if large_loss_result:
-        stop_loss_large_loss_sim = RuleSimulationItem(
-            rule=large_loss_result["rule"],
-            original_return=large_loss_result["original_return"],
-            what_if_return=large_loss_result["what_if_return"],
-            delta=large_loss_result["delta"],
-            affected_positions=large_loss_result["affected_positions"],
-        )
+    # 移动止损：跟踪 high 回撤 8%
+    trailing_stop_sim = _run_rule("trailing_stop", {"trail_pct": 0.08})
+    # 止盈侧：固定止盈 +10% + 移动止盈(模式A) 5%/5%
+    take_profit_sim = _run_rule("take_profit", {"profit_pct": 0.10})
+    trailing_take_profit_sim = _run_rule(
+        "trailing_take_profit", {"activation_pct": 0.05, "trail_pct": 0.05}
+    )
 
     # V2.0 Shapley attribution
     shapley_values = shapley_attribution(positions, patterns_map_names)
@@ -806,6 +798,9 @@ def get_whatif(
         items=whatif_items,
         stop_loss=stop_loss_sim,
         stop_loss_large_loss=stop_loss_large_loss_sim,
+        trailing_stop=trailing_stop_sim,
+        take_profit=take_profit_sim,
+        trailing_take_profit=trailing_take_profit_sim,
         shapley=shapley_items,
     )
 

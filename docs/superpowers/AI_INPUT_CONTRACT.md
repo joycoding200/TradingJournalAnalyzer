@@ -68,6 +68,7 @@
 | `what_if` | WhatIfResponse.items | `移除X: delta ±Y, 影响度Z`（带口径说明） | ✅（口径本次补） |
 | `shapley` | WhatIfResponse.shapley | `赚钱来源：标签 +X元 (Y%)` | 🔧 本次新增 |
 | `positions_summary` | top/bottom3 positions | `盈利/亏损最多：symbol ±X (Y%), 持仓N天` | ✅ |
+| `scenario_backtest` | report.py `_build_analysis_data` 采集（5个规则） | `规则名: 触发N次, delta ±X, 模拟后收益率±Y`（独立成段，带口径说明） | 🔧 V1.2.3 新增 |
 
 ### 第 4 层：不喂（及理由）
 
@@ -79,7 +80,7 @@
 | `mae_winners` / `mae_losers` | avg_mae 已够用，分盈亏浮亏过细 |
 | `best_pattern` / `worst_pattern` | 冗余，AI 可从 patterns 自行排序 |
 | `cross_analysis` | 组合数不定，prompt 易变长；稳健档暂不喂，后续按需评估 |
-| `stop_loss` 止损回测 | 稳健档暂不喂（与 whatif 口径相近，避免重复口径说明）；后续按需评估 |
+| ~~`stop_loss` 止损回测~~ | **V1.2.3 已喂**（升格为 `scenario_backtest` 段，含 5 个规则：固定止损/大亏止损/移动止损/固定止盈/移动止盈）。注意其 delta 语义与 `what_if` 相反（应用规则 vs 移除行为），必须独立成段，口径说明成对出现 |
 
 ---
 

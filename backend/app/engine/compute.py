@@ -522,22 +522,36 @@ def compute_whatif(
         for i in items
     ]
 
-    # Stop-loss simulation
-    stop_loss_sim = None
-    result = ProfitAttribution.analyze_rule(
-        valid_positions,
-        rule_type="stop_loss",
-        params={"loss_pct": 0.05},
-        market_data=market_data,
-    )
-    if result:
-        stop_loss_sim = RuleSimulationItem(
+    # ── 规则回测模拟（V1.2.3: 5个规则全算，固定标准档参数）────────────
+    # 必须与 api/analysis.py 的 get_whatif 慢路径保持一致（PROJECT_EXPERIENCE:
+    # compute_stats vs get_stats 两处各写一份需同步，compute_whatif 同理）。
+    # delta = 模拟后收益率 − 现状收益率，delta>0 = 该规则改善收益
+    def _run_rule(rt, params):
+        result = ProfitAttribution.analyze_rule(
+            valid_positions, rule_type=rt, params=params, market_data=market_data
+        )
+        if not result:
+            return None
+        return RuleSimulationItem(
             rule=result["rule"],
             original_return=result["original_return"],
             what_if_return=result["what_if_return"],
             delta=result["delta"],
             affected_positions=result["affected_positions"],
         )
+
+    # 止损侧：固定8%止损（标准档，原5%偏紧）+ 仅大亏止损
+    stop_loss_sim = _run_rule("stop_loss", {"loss_pct": 0.08})
+    stop_loss_large_loss_sim = _run_rule(
+        "stop_loss_large_loss", {"loss_pct": 0.08, "large_loss_pct": -0.08}
+    )
+    # 移动止损：跟踪 high 回撤 8%
+    trailing_stop_sim = _run_rule("trailing_stop", {"trail_pct": 0.08})
+    # 止盈侧：固定止盈 +10% + 移动止盈(模式A) 5%/5%
+    take_profit_sim = _run_rule("take_profit", {"profit_pct": 0.10})
+    trailing_take_profit_sim = _run_rule(
+        "trailing_take_profit", {"activation_pct": 0.05, "trail_pct": 0.05}
+    )
 
     # Shapley attribution
     shapley_values = shapley_attribution(positions, patterns_map_names)
@@ -557,7 +571,15 @@ def compute_whatif(
         for pat, val in sorted(shapley_values.items(), key=lambda x: -x[1])
     ]
 
-    return WhatIfResponse(items=whatif_items, stop_loss=stop_loss_sim, shapley=shapley_items)
+    return WhatIfResponse(
+        items=whatif_items,
+        stop_loss=stop_loss_sim,
+        stop_loss_large_loss=stop_loss_large_loss_sim,
+        trailing_stop=trailing_stop_sim,
+        take_profit=take_profit_sim,
+        trailing_take_profit=trailing_take_profit_sim,
+        shapley=shapley_items,
+    )
 
 
 # ─── Unified pipeline ────────────────────────────────────────────────────────

@@ -84,12 +84,13 @@ def _compute_date_segments(trades, gap_days: int = 14) -> str:
     return "、".join(f"{s} 至 {e}" for s, e in segments)
 
 
-def _build_analysis_data(trades, positions, insight_items, whatif_items, stats_data: dict = None, report_date: str = "", date_start: str = "", date_end: str = "", baseline_expectancy: float = None, shapley_items: list = None) -> dict:
+def _build_analysis_data(trades, positions, insight_items, whatif_items, stats_data: dict = None, report_date: str = "", date_start: str = "", date_end: str = "", baseline_expectancy: float = None, shapley_items: list = None, scenario_results: list = None) -> dict:
     """Build the analysis_data dict expected by build_user_prompt.
 
     When stats_data is provided (V4.0), risk metrics and positions summary
     are included for richer AI diagnosis. AI_INPUT_CONTRACT 字段：
-    baseline_expectancy（评价基准）、shapley_items（赚钱来源归因）。
+    baseline_expectancy（评价基准）、shapley_items（赚钱来源归因）、
+    scenario_results（情景回测：5个规则的delta，V1.2.3）。
     """
     total_trades = len(trades)
     total_positions = len(positions)
@@ -131,6 +132,10 @@ def _build_analysis_data(trades, positions, insight_items, whatif_items, stats_d
             for i in whatif_items
         ],
     }
+    # AI_INPUT_CONTRACT V1.2.3: 情景回测——5个规则的delta喂给AI
+    # delta = 应用规则后收益率 − 现状值，正=改善，负=拉低（与what_if的delta语义不同，独立成段）
+    if scenario_results:
+        result["scenario_backtest"] = scenario_results
     # AI_INPUT_CONTRACT: 评价基准 + 赚钱来源归因
     if baseline_expectancy is not None:
         result["baseline_expectancy"] = round(baseline_expectancy, 2)
@@ -261,6 +266,32 @@ async def generate_report(
     valid_positions = [p for p in positions if getattr(p, "cost_known", True)]
     valid_count = len(valid_positions)
 
+    # V1.2.3: 情景回测——5个规则反事实模拟，喂给AI做scenario_backtest段
+    # delta = 应用规则后收益率 − 现状值，正=该规则改善收益（与whatif的delta语义不同）
+    def _run_scenario(rt, params, label):
+        r = ProfitAttribution.analyze_rule(
+            valid_positions, rule_type=rt, params=params, market_data=market_data
+        )
+        if not r:
+            return None
+        return {
+            "rule_name": label,
+            "affected_positions": r["affected_positions"],
+            "original_return": r["original_return"],
+            "what_if_return": r["what_if_return"],
+            "delta": r["delta"],
+        }
+
+    scenario_results = [
+        r for r in [
+            _run_scenario("stop_loss", {"loss_pct": 0.08}, "固定8%止损"),
+            _run_scenario("stop_loss_large_loss", {"loss_pct": 0.08, "large_loss_pct": -0.08}, "仅大亏止损"),
+            _run_scenario("trailing_stop", {"trail_pct": 0.08}, "移动止损8%"),
+            _run_scenario("take_profit", {"profit_pct": 0.10}, "固定止盈10%"),
+            _run_scenario("trailing_take_profit", {"activation_pct": 0.05, "trail_pct": 0.05}, "移动止盈5%/5%"),
+        ] if r
+    ]
+
     # AI_INPUT_CONTRACT: 护栏字段 — 小样本标识（<5笔）+ 盈亏持仓天数对比
     is_small_sample = valid_count < 5
     win_positions_h = [p for p in valid_positions if p.pnl > 0]
@@ -372,6 +403,7 @@ async def generate_report(
         date_end="",  # no longer used individually
         baseline_expectancy=baseline_expectancy,
         shapley_items=shapley_items,
+        scenario_results=scenario_results,
     )
     user_prompt = build_user_prompt(analysis_data)
 

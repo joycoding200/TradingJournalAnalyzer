@@ -197,6 +197,9 @@ class WhatIfResponse(BaseModel):
     items: list[AttributionItem]  # factor contribution (original)
     stop_loss: Optional[RuleSimulationItem] = None
     stop_loss_large_loss: Optional[RuleSimulationItem] = None  # V2.1.1: 仅针对大亏持仓的止损模拟
+    trailing_stop: Optional[RuleSimulationItem] = None  # V1.2.3: 移动止损（跟踪high回撤）
+    take_profit: Optional[RuleSimulationItem] = None  # V1.2.3: 固定止盈
+    trailing_take_profit: Optional[RuleSimulationItem] = None  # V1.2.3: 移动止盈（模式A）
     shapley: list[ShapleyItem] = []  # V2.0 Shapley attribution
 
 

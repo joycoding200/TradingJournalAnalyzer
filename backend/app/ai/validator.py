@@ -101,6 +101,23 @@ class ReportValidator:
                     f"连续亏损次数不匹配: 报告={found}, 数据={cl}"
                 )
 
+        # V1.2.3: 情景回测软校验——每项 delta 数值一致性（±1% 容忍，不匹配记 warning 不阻断）
+        # AI 报告渲染格式："- {rule_name}: 触发N次, delta +0.0300, 模拟后收益率+0.0060"
+        scenario = input_data.get("scenario_backtest")
+        if scenario:
+            for s in scenario:
+                label = s.get("rule_name", "")
+                expected_delta = s.get("delta")
+                if expected_delta is not None and label:
+                    escaped_label = re.escape(label)
+                    found = ReportValidator._extract_float(
+                        report, rf"{escaped_label}[^-\n]*?delta\s*([+-]?\d+\.?\d*)"
+                    )
+                    if found is not None and abs(found - expected_delta) > max(0.0001, abs(expected_delta) * 0.01):
+                        errors.append(
+                            f"情景回测 {label} delta 不匹配: 报告≈{found:.4f}, 数据={expected_delta:.4f}"
+                        )
+
         return ValidationResult(is_valid=len(errors) == 0, errors=errors)
 
     # ------------------------------------------------------------------

@@ -6,6 +6,71 @@
 
 ---
 
+## [V1.2.3] — 2026-06-30
+
+### 概述
+
+V1.2.2 修复了 AI 报告反事实方向 bug，但 WhatIf 引擎只有"固定止损"一种反事实，等于只问"少亏多少"，不问"少赚多少"。散户典型病灶是"截断利润让亏损奔跑"——华西真实数据：小赚离场 17 笔胜率 100% 只赚 9352，大亏离场 5 笔亏 36091，盈亏失衡根子在止盈过早。本版本新增移动止损/固定止盈/移动止盈三种反事实规则，补齐止盈侧诊断；同时修正现有固定止损的参数档位（5%→8% 标准档）和 T+1 bug（bar 遍历从 entry_date 当日起，违反 A 股当日不可卖）。
+
+### 新增功能
+
+#### 1. 三种反事实规则（引擎层 `whatif.py`）
+
+`analyze_rule` 新增 3 个 `rule_type` 分支，与现有 `stop_loss` / `stop_loss_large_loss` 平级：
+
+- **移动止损 `trailing_stop`**（trail 8%）：跟踪持仓期间最高价(high)，止损价随最高价上移（只上不下），回撤 8% 触发卖出。过滤洗盘、锁定浮盈。涨停板不触发顺延，停牌跳过保持前值。
+- **固定止盈 `take_profit`**（+10%）：涨到 +10% 触发卖出。截断利润方向的反事实——回答"机械止盈会多赚还是少赚"。
+- **移动止盈 `trailing_take_profit`**（模式 A：5%/5%）：盈利达 5% 才激活移动止损保护，未激活前不干预；激活后 `stop_price = max(max_high×(1-trail_pct), entry_price)` 确保不亏出。让利润奔跑 + 保护利润。
+
+三规则复用 `RuleSimulationItem` schema（`rule/original_return/what_if_return/delta/affected_positions`），`delta = 模拟后收益率 − 现状值`，`delta > 0` = 规则改善（统一语义）。
+
+#### 2. AI 报告新增 `scenario_backtest` 段（独立成段）
+
+- **采集**（`report.py`）：`generate_report` 补 5 个 `analyze_rule` 调用（含现有 2 + 新增 3），`_build_analysis_data` 新增 `scenario_results` 参数 + `scenario_backtest` key
+- **渲染**（`prompt.py`）：新增"情景回测（规则模拟）"段，5 行口径说明 + 逐项渲染（规则名/触发次数/delta/模拟后收益率）；与现有 whatif 段**分开**（delta 语义主体不同：应用规则 vs 移除行为，合并会让 AI 混淆——V1.2.0/V1.2.2 方向 bug 教训）
+- **校验**（`validator.py`）：对每项 delta 软校验（±1% 容忍，仿 PF 范式），不匹配记 warning 不阻断
+- **SYSTEM_PROMPT** 数据真实性规范补第 8 条：回测数字是反事实模拟，禁用"保证收益/实际能赚/能让你/帮你"因果暗示词
+- **契约**（`AI_INPUT_CONTRACT.md`）：`stop_loss` 从第 4 层"不喂"移出，第 3 层新增 `scenario_backtest` 行
+
+#### 3. 前端情景回测 tab 新增展示（`WhatIfTab.tsx`）
+
+- **策略对比速览矩阵**（顶部首屏）：6 行表格（现状/固定8%止损/大亏止损/移动止损8%/固定止盈10%/移动止盈5%/5%），列含模拟后收益率/变化(delta)/触发/评级，delta 颜色正绿负红，口径说明行。用户一眼看出哪个规则对自己最有效
+- **3 张新卡片**（SECTION 1b 后）：📈 移动止损 / 🎯 固定止盈 / 🚀 移动止盈，复用大亏止损卡片骨架，三档文案（改善/拉低/中性）遵守描述性原则
+- 现有止损卡片文案 5%→8%
+
+### 修复的 Bug
+
+#### 4. 固定止损 5% → 8%（标准档对齐）
+
+**问题**：现有固定止损默认 5% 是保守偏紧档（A 股散户标准是 8%）。项目自有数据为铁证——V1.2.2 记录"5% 线太紧，59 次触发但净效果≈0"。5% 在 ±10% 涨停板下处于"半个涨停板"位置，正常波动即触发。
+
+**修复**：`analysis.py:get_whatif` 的 `stop_loss` 和 `stop_loss_large_loss` 的 `loss_pct` 0.05 → 0.08。三处阈值自洽：固定止损 8% = 移动止损 trail 8% = 大亏止损阈值 `pnl_pct < −8%`。
+
+**历史基准归档**：V1.2.2 的"整体 5% 止损 delta=−0.02%"是 5% 档历史基准，改默认值后不可直接比较。8% 档华西实测 delta=+0.22%（向正方向变大，因误杀减少），符合预期。
+
+#### 5. T+1 修正（入场当日不可卖）
+
+**问题**：`stop_loss` 和 `stop_loss_large_loss` 的 bar 遍历条件 `p.entry_date <= bar_date` 包含入场当日，但 A 股 T+1 当日买入不可卖，入场当日触发止损不现实。
+
+**修复**：两处 `<=` → `<`（`whatif.py:174, 247`），3 个新规则从一开始就用 `entry_date < bar_date`。
+
+### 验证
+
+- 后端引擎：华西三份交割单离线复算 5 规则 delta：固定8%止损 +0.22% / 大亏止损 +2.35% / 移动止损8% −0.59% / 固定止盈10% +1.33% / 移动止盈5%/5% −0.45%
+- 移动止损/移动止盈 delta 为负是**真实反事实信号**（非 bug）：华西持仓日内振幅中位 4.5%、>8% 占比 14%，8%/5% 阈值偏紧，移动止损 74 次触发中 62 次（84%）误杀。这是参数选择问题，引擎逻辑正确
+- AI 采集 + 渲染：`scenario_backtest` 5 项全采集，prompt 段正确渲染，口径说明成对出现
+- 前端 TypeScript：0 错误
+- 后端 import + schema：5 个 `Optional[RuleSimulationItem]` 字段就绪，openapi 确认 3 新规则已加载
+- uvicorn 重启加载新代码（按 PROJECT_EXPERIENCE「僵尸 worker 陷阱」树形杀进程）
+
+### 涉及文件
+
+- 后端：`backend/app/engine/whatif.py`（T+1 修正 + 3 新规则）、`backend/app/schemas/analysis.py`（+3 字段）、`backend/app/api/analysis.py`（改 8% + 调 3 新规则）、`backend/app/api/report.py`（补 analyze_rule + scenario_backtest 采集）、`backend/app/ai/prompt.py`（scenario_backtest 段 + SYSTEM_PROMPT 规范）、`backend/app/ai/validator.py`（scenario 软校验）
+- 文档：`docs/superpowers/AI_INPUT_CONTRACT.md`（移出 stop_loss + 新增 scenario_backtest）
+- 前端：`frontend/src/pages/tabs/WhatIfTab.tsx`（速览矩阵 + 3 新卡片 + 8% 文案）
+
+---
+
 ## [V1.2.2] — 2026-06-30
 
 ### 概述

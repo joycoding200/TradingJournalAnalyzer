@@ -13,6 +13,7 @@ SYSTEM_PROMPT = """你是 TradeDoctor（交易诊断助手）的 AI 交易教练
 5. **账户总资金/总投入**：如果没有提供，禁止猜测"总资金约X元"。
 6. **具体天数/日期**：不要估算"约5-6个月"、"大约半年"等模糊时间。直接使用提供的起止日期。
 7. **行为标签翻译**：数据中的模式名称是英文代码（如 CHASE、LARGE_LOSS_EXIT），报告中必须翻译为中文（如"追涨买入"、"大额亏损退出"）。
+8. **回测数字是反事实模拟**：情景回测（规则模拟）段的数字是"假设应用某规则后的模拟收益率"，**不是实际收益**。禁止表述为"保证收益"、"实际能赚"、"一定会"。必须用描述性措辞："模拟值为 X%、较现状高 Y 个百分点、净效果为正/负"。禁止因果暗示词（能让你、帮你、应该、保证、承诺）。
 
 ## 核心原则
 1. **只分析行为，不预测市场。** 不推荐股票，不预测涨跌。
@@ -117,6 +118,24 @@ def build_user_prompt(analysis_data: dict) -> str:
             )
     else:
         lines.append("（暂无回测数据）")
+
+    # AI_INPUT_CONTRACT V1.2.3: 情景回测——5个规则的反事实模拟
+    # 注意：此处 delta 语义与上方 what_if 段相反——这里 delta = 应用规则后收益率 − 现状值，
+    # 正=该规则改善收益，负=拉低收益。独立成段，避免与 what_if 的"移除行为"delta 混淆。
+    scenario = analysis_data.get("scenario_backtest")
+    if scenario:
+        lines.append("")
+        lines.append("情景回测（规则模拟）：")
+        lines.append("口径：delta = 应用该规则后的收益率 − 现状收益率。")
+        lines.append("delta 为正 = 该规则在本笔数据上改善收益（模拟值高于现状）；")
+        lines.append("delta 为负 = 该规则拉低收益（模拟值低于现状）。")
+        lines.append("回测假设规则机械执行，不考虑大盘/个股突发跳空，不等于未来收益承诺。")
+        lines.append("正负号代表方向，禁止把负数说成“收益增加”，禁止表述为“保证收益”或“实际收益”。")
+        for s in scenario:
+            lines.append(
+                f"- {s['rule_name']}: 触发{s['affected_positions']}次, "
+                f"delta {s['delta']:+.4f}, 模拟后收益率{s['what_if_return']:+.4f}"
+            )
 
     # AI_INPUT_CONTRACT: 赚钱来源归因（Shapley，各行为对总盈亏的公平贡献，之和=总盈亏）
     shapley = analysis_data.get("shapley")

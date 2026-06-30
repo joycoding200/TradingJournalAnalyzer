@@ -53,17 +53,81 @@ export default function WhatIfTab({ whatIf }: WhatIfTabProps) {
   return (
     <div className="space-y-6">
       {/* ═══════════════════════════════════════════════════════════
+          SECTION 0: 策略对比速览矩阵 — 首屏决策入口
+          ═══════════════════════════════════════════════════════════ */}
+      {(() => {
+        const rows: Array<{ name: string; sim?: any }> = [
+          { name: "现状（无纪律）" },
+          { name: "固定8%止损", sim: data.stop_loss },
+          { name: "仅大亏止损", sim: data.stop_loss_large_loss },
+          { name: "移动止损8%", sim: data.trailing_stop },
+          { name: "固定止盈10%", sim: data.take_profit },
+          { name: "移动止盈5%/5%", sim: data.trailing_take_profit },
+        ];
+        const currentReturn = data.stop_loss?.original_return ?? 0;
+        const rating = (delta: number) =>
+          delta > 0.005 ? "良好" : delta < -0.005 ? "较差" : "一般";
+        // 至少有1个模拟结果才显示矩阵
+        if (!rows.some((r) => r.sim)) return null;
+        return (
+          <div>
+            <h2 className="text-sm font-medium mb-3">🎯 策略对比速览</h2>
+            <p className="text-xs mb-3 text-text-secondary">
+              口径：变化 = 模拟值 − 现状值，正数=该规则在本笔数据上改善收益，负数=拉低。
+            </p>
+            <Card className="overflow-hidden p-0">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-text-secondary text-xs">
+                    <th className="p-3 text-left">策略</th>
+                    <th className="p-3 text-right">模拟后收益率</th>
+                    <th className="p-3 text-right">变化</th>
+                    <th className="p-3 text-right">触发</th>
+                    <th className="p-3 text-right">评级</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.name} className="border-b border-border last:border-0">
+                      <td className="p-3 font-medium">{r.name}</td>
+                      <td className="p-3 text-right text-text-secondary">
+                        {r.sim ? fmtPct(r.sim.what_if_return) : fmtPct(currentReturn)}
+                      </td>
+                      <td className={`p-3 text-right font-medium ${
+                        !r.sim ? "text-text-secondary"
+                          : r.sim.delta > 0 ? "text-success"
+                          : r.sim.delta < 0 ? "text-danger"
+                          : "text-accent"
+                      }`}>
+                        {r.sim ? `${r.sim.delta >= 0 ? "+" : ""}${(r.sim.delta * 100).toFixed(1)}%` : "—"}
+                      </td>
+                      <td className="p-3 text-right text-text-secondary">
+                        {r.sim ? `${r.sim.affected_positions} 次` : "—"}
+                      </td>
+                      <td className="p-3 text-right text-xs text-text-secondary">
+                        {r.sim ? rating(r.sim.delta) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        );
+      })()}
+
+      {/* ═══════════════════════════════════════════════════════════
           SECTION 1: Stop Loss Backtest — most actionable
           ═══════════════════════════════════════════════════════════ */}
       {data.stop_loss && (
         <div>
           <h2 className="text-sm font-medium mb-3">💡 止损效果模拟</h2>
           <p className="text-xs mb-3 text-text-secondary">
-            假设每次开仓设置 5% 止损线，盘中触发即卖出，你的收益会变成怎样。
+            假设每次开仓设置 8% 止损线（A 股散户标准档），盘中触发即卖出，你的收益会变成怎样。
           </p>
           <Card className="p-4">
             <div className="flex justify-between items-center mb-2">
-              <span className="font-medium">5% 止损线</span>
+              <span className="font-medium">8% 止损线</span>
               <span className="text-xs text-text-secondary">
                 触发 {data.stop_loss.affected_positions} 次
               </span>
@@ -76,15 +140,15 @@ export default function WhatIfTab({ whatIf }: WhatIfTabProps) {
               </span>
             </div>
             <div className={`mt-3 border-t border-border pt-3 text-xs font-medium ${
-              data.stop_loss.delta > 0 ? "text-success"
-                : data.stop_loss.delta < -0.03 ? "text-danger"
+              data.stop_loss.delta > 0.005 ? "text-success"
+                : data.stop_loss.delta < 0 ? "text-danger"
                 : "text-accent"
             }`}>
-              {data.stop_loss.delta > 0
-                ? "✅ 设止损能帮你减少亏损，建议严格执行"
-                : data.stop_loss.delta < -0.03
-                ? "⚠️ 5%止损对你的交易风格太紧，建议放宽或改用移动止损"
-                : `5%止损对你的收益净影响很小（${(data.stop_loss.delta * 100).toFixed(1)}%）：盘中触发 ${data.stop_loss.affected_positions} 次，止损挽回的大亏与误杀的盈利基本抵消。可作兜底风控，但别指望它改善收益`}
+              {data.stop_loss.delta > 0.005
+                ? `✅ 8% 止损在本笔数据上模拟值为 ${fmtPct(data.stop_loss.what_if_return)}，较现状 ${fmtPct(data.stop_loss.original_return)} 改善 ${fmtPct(data.stop_loss.delta)}——止损有效，触发 ${data.stop_loss.affected_positions} 次挽回了部分亏损`
+                : data.stop_loss.delta < 0
+                ? `⚠️ 8% 止损反而拉低收益（${fmtPct(data.stop_loss.delta)}）：盘中触发 ${data.stop_loss.affected_positions} 次，误杀的盈利大于挽回的亏损，建议放宽或改用移动止损`
+                : `8% 止损净影响很小（${fmtPct(data.stop_loss.delta)}）：盘中触发 ${data.stop_loss.affected_positions} 次，止损挽回的大亏与误杀的盈利基本抵消，可作兜底风控`}
             </div>
           </Card>
         </div>
@@ -127,6 +191,61 @@ export default function WhatIfTab({ whatIf }: WhatIfTabProps) {
           </Card>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════
+          SECTION 1c-e: 移动止损 / 固定止盈 / 移动止盈 三张卡片
+          delta = 应用规则后收益率 − 现状值，正=改善，负=拉低
+          ═══════════════════════════════════════════════════════════ */}
+      {([
+        { key: "trailing_stop", icon: "📈", title: "移动止损模拟", param: "跟踪最高价回撤 8%",
+          desc: "假设用移动止损（止损价随持仓期间最高价上移，回撤 8% 触发卖出），过滤洗盘、锁定浮盈的效果。",
+          improve: (d: any) => `✅ 移动止损 8% 在本笔数据上模拟值为 ${fmtPct(d.what_if_return)}，较现状 ${fmtPct(d.original_return)} 改善 ${fmtPct(d.delta)}——触发 ${d.affected_positions} 次中多数锁住了浮盈`,
+          worsen: (d: any) => `⚠️ 移动止损反而拉低收益（${fmtPct(d.delta)}）：触发 ${d.affected_positions} 次中误杀偏多，你的持仓期间波动较大，8% 回撤阈值偏紧，可考虑放宽或结合趋势确认`,
+          neutral: (d: any) => `移动止损 8% 净影响很小（${fmtPct(d.delta)}）：触发 ${d.affected_positions} 次，锁利与误杀基本抵消` },
+        { key: "take_profit", icon: "🎯", title: "固定止盈模拟", param: "涨到 +10% 即卖",
+          desc: "假设统一以 +10% 止盈（触及即卖，未触及按原退出），检验机械止盈会多赚还是少赚。",
+          improve: (d: any) => `✅ 固定止盈 +10% 模拟值为 ${fmtPct(d.what_if_return)}，较现状 ${fmtPct(d.original_return)} 改善 ${fmtPct(d.delta)}——触发 ${d.affected_positions} 次，截断了部分回吐、锁住了利润`,
+          worsen: (d: any) => `⚠️ 固定止盈反而拉低收益（${fmtPct(d.delta)}）：触发 ${d.affected_positions} 次中多数卖出后继续上涨，截断了本可继续的利润——你的止盈纪律整体合理，机械加码止盈边际收益为负`,
+          neutral: (d: any) => `固定止盈 +10% 净影响很小（${fmtPct(d.delta)}）：触发 ${d.affected_positions} 次，止盈与错过基本抵消` },
+        { key: "trailing_take_profit", icon: "🚀", title: "移动止盈模拟", param: "盈利5%后启动，回撤5%止盈",
+          desc: "假设盈利达 5% 后启动移动止损保护利润（回撤 5% 才卖，未达 5% 不干预），让利润奔跑的效果。",
+          improve: (d: any) => `✅ 移动止盈 5%/5% 模拟值为 ${fmtPct(d.what_if_return)}，较现状 ${fmtPct(d.original_return)} 改善 ${fmtPct(d.delta)}——触发 ${d.affected_positions} 次，让利润奔跑的同时保护了到手利润`,
+          worsen: (d: any) => `⚠️ 移动止盈反而拉低收益（${fmtPct(d.delta)}）：触发 ${d.affected_positions} 次中，激活后遇跳空缺口击穿止损价，到手利润反而回吐——你的实际离场时机已不错，可考虑更紧的 trail 减少回吐`,
+          neutral: (d: any) => `移动止盈 5%/5% 净影响很小（${fmtPct(d.delta)}）：触发 ${d.affected_positions} 次，多数持仓未达 5% 激活阈值` },
+      ] as const).map((cfg) => {
+        const sim = (data as any)[cfg.key];
+        if (!sim) return null;
+        return (
+          <div key={cfg.key}>
+            <h2 className="text-sm font-medium mb-3">{cfg.icon} {cfg.title}</h2>
+            <p className="text-xs mb-3 text-text-secondary">{cfg.desc}</p>
+            <Card className="p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-medium">{cfg.param}</span>
+                <span className="text-xs text-text-secondary">
+                  触发 {sim.affected_positions} 次
+                </span>
+              </div>
+              <div className="flex justify-between text-sm mt-2 text-text-secondary">
+                <span>当前收益: {(sim.original_return * 100).toFixed(1)}%</span>
+                <span>模拟后: {(sim.what_if_return * 100).toFixed(1)}%</span>
+                <span className={sim.delta >= 0 ? "text-success" : "text-danger"}>
+                  变化 {sim.delta >= 0 ? "+" : ""}{(sim.delta * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className={`mt-3 border-t border-border pt-3 text-xs font-medium ${
+                sim.delta > 0.005 ? "text-success"
+                  : sim.delta < 0 ? "text-danger"
+                  : "text-accent"
+              }`}>
+                {sim.delta > 0.005 ? cfg.improve(sim)
+                  : sim.delta < 0 ? cfg.worsen(sim)
+                  : cfg.neutral(sim)}
+              </div>
+            </Card>
+          </div>
+        );
+      })}
 
       {/* ═══════════════════════════════════════════════════════════
           SECTION 2: 反事实归因 — 少做哪些能改善收益
