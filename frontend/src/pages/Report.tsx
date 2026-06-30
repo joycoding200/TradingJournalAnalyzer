@@ -116,22 +116,23 @@ export default function Report() {
 
       {/* C2.1: chapter TOC — extract ## and ### headings from the markdown */}
       {(() => {
-        const headings = (data.report_content || "")
+        type Heading = { level: number; text: string };
+        const headings: Heading[] = (data.report_content || "")
           .split("\n")
-          .map((l) => {
+          .map((l: string): Heading | null => {
             const m = /^(#{2,3})\s+(.+)$/.exec(l);
             if (!m) return null;
             // strip bold markers for display, keep text for id
             const text = m[2].replace(/\*\*/g, "").trim();
             return { level: m[1].length, text };
           })
-          .filter((h): h is { level: number; text: string } => !!h && !!h.text);
+          .filter((h: Heading | null): h is Heading => !!h && !!h.text);
         if (headings.length < 2) return null;
         return (
           <nav aria-label="报告目录" className="mb-4 rounded-lg border border-border bg-bg-secondary/60 p-3">
             <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-text-secondary">目录</div>
             <ul className="flex flex-wrap gap-x-4 gap-y-1">
-              {headings.map((h) => (
+              {headings.map((h: Heading) => (
                 <li key={h.text}>
                   <a
                     href={`#${encodeURIComponent(h.text)}`}

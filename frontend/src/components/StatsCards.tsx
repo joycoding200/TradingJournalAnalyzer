@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Collapsible } from "./ui";
+import { Collapsible } from "./ui";
 import KpiCard from "./KpiCard";
 import EquityCurve from "./EquityCurve";
 import SymbolSummaryTable from "./SymbolSummaryTable";
