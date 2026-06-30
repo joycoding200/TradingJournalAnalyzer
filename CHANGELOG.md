@@ -6,6 +6,83 @@
 
 ---
 
+## [V1.2.1] — 2026-06-30
+
+### 概述
+
+本版本是 `V1.1_IMPROVEMENT_PLAN.md` 前端审查报告中 **P1 + P2 优先级任务**的实施收尾，延续 V1.1.3 的前端 UX 打磨。P1（7 个 EPIC：A2 导航 / B3 KPI / C2 报告 / D2 昵称 / D3 管理员 / E1 响应式 / E2 A11y）分两批完成——第一批 5 个纯前端、第二批 D2/D3 涉及后端；P2 按决策收敛为 B5.1 归因进度条 + F1 组件复用 + F2 测试基础设施。所有改动经 Playwright E2E 回归套件（16 项）+ vitest 单元测试（19 项）验证通过。
+
+### 新增功能（P1 第一批，纯前端 5 EPIC）
+
+#### 1. 导航增强（A2）
+- 顶部加「历史」直接链接（登录态），不再需点开头像 dropdown
+- 当前页 active 高亮（桌面 + 移动，`/upload`/`/history` 变 accent）
+- 移动端汉堡菜单展开时图标变色（视觉反馈）
+- 新增 `BackToTop` 组件：滚动 > 600px 时浮动按钮出现，平滑回顶
+
+#### 2. 核心 KPI 卡片规范化（B3）
+- 抽公共 `utils/format.ts:formatMoney`：统一「元」单位 + 千分位 + 2 位小数，≥1万 附「万」简写与完整元；替换 StatsCards / SymbolSummaryTable / EquityCurve 三处重复的本地实现
+- 胜率卡片显示分子分母：「22 笔赚钱 / 29 笔已平仓」
+- 「完整交易 42 笔」改三档：「已平仓 29 笔」+ summary「总成交 N｜完整建仓 M｜已平仓 K（X 赚/Y 亏）」——修正 22+7≠42 的困惑（total_positions 含未平仓）
+- hero 栅格断点 md→lg，中屏 2 列不再挤
+
+#### 3. AI 报告可读性（C2）
+- 章节目录：从 markdown 提取 `##`/`###` 标题渲染锚点 nav，点击平滑滚动（修复：AI 报告用 `###` 作章节，原 TOC 只提 `##` 不渲染）
+- 「复制全文」按钮：一次复制整篇 Markdown 到剪贴板
+- 按钮权重对调：「返回分析面板」变 primary（上下文切换），「下载/复制」为 outline
+- h2/h3 带编码 id + `scroll-mt-20`（粘性导航偏移）
+
+#### 4. 响应式（E1）
+- Analysis 顶部按钮移动端缩小 + flex-wrap，不再换行溢出
+- Landing Hero 字号分档 `text-3xl sm:text-4xl md:text-5xl`（移动端不超 36px）
+- Feature 卡片间距 `mt-20`→`mt-10 sm:mt-16`，首屏可见 Trust 卡片
+- 表格移动端卡片视图（B2.3 已做）、图表 ResponsiveContainer 已就绪——按决策不做通用 HOC
+
+#### 5. 可访问性 A11y（E2）
+- 跳过链接「跳到主内容」（sr-only + focus 可见，键盘第一焦点）
+- 表单 input 加 `aria-label`/`aria-invalid`/`aria-describedby` 关联错误块
+- 错误提示块 `role="alert"`，屏幕阅读器即时播报
+
+### 新增功能（P1 第二批，D2/D3 后端）
+
+#### 6. 注册可选昵称（D2）
+- `RegisterRequest` 加可选 `nickname` 字段（2-20 字符），传了就用、没传走 `generate_nickname()`
+- 前端 `RegisterForm` 加可选昵称输入框
+
+#### 7. 管理员安全加固（D3）
+- **路由不可猜**：`/admin` → `/admin-7c2b9e`，防自动化扫描
+- **爆破锁定**：内存计数器，5 次失败/15 分钟 → 429「登录失败次数过多」；limiter 调到 20/min 让 per-username 锁定先触发（原 5/min 与锁定阈值相同，limiter 抢先掩盖）
+- **登录审计**：User 加 `last_login_at`/`last_login_ip` + 迁移；登录成功记录时间+IP，返回上次登录信息；后台首页显示「上次登录」
+
+### 新增功能（P2，按决策收敛）
+
+#### 8. 归因分析贡献进度条（B5.1）
+- `InsightTable` 新增「贡献」列：横向进度条宽度 = `|total_pnl| / sum(|total_pnl|)`，绿正红负，附百分比。B5.2 维度切换器跳过（InsightTab 已按 4 维展示）
+
+#### 9. 组件复用（F1）
+- 抽取 `KpiCard` 组件（variant hero/detail），统一 StatsCards 的 heroCard/detailCard 两个近似函数；`Rating`+`COLOR_CLASS` 内聚到 KpiCard
+- F1.3 三态组件（EmptyState/LoadingSpinner/ErrorBox）已存在于 ui.tsx，无需做
+
+#### 10. 测试基础设施（F2）
+- **vitest 单元测试（19 项全过）**：配 vitest.config.ts + jsdom + setup（matchMedia/ResizeObserver polyfill）；format（8）、SymbolSummaryTable（7，搜索/排序/清空）、KpiCard（4）
+- **Playwright E2E 回归套件（16 项全过）**：`frontend/tests/e2e/regression.py`，本地目标 + 每次新账号 + 断言式 check() + 非零退出码。覆盖注册→登录→上传→分析(三档/中文名/搜索/X)→Tab切换→归因进度条→AI报告(TOC/复制)→历史active→404→console 0 error
+
+### 按决策不做
+
+| EPIC | 决策 | 理由 |
+|---|---|---|
+| B4 WhatIf slider | 不做 | 保持固定 5% 止损 |
+| C3 报告分享链接 | 不做 | 已有「复制全文」够用 |
+| E3 暗色模式 | 不做 | 项目默认暗色，做「跟随系统」需定义全套明色 token，工作量过大 |
+
+### 验证
+- vitest 单元测试：**19/19 通过**
+- Playwright E2E 回归：**16/16 通过**
+- 前端 TypeScript：0 错误
+- 后端 auth + admin 测试：28/28 通过
+
+---
+
 ## [V1.2.0] — 2026-06-29
 
 ### 概述
