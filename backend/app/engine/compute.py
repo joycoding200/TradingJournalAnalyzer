@@ -46,33 +46,6 @@ from app.schemas.analysis import (
 
 logger = logging.getLogger(__name__)
 
-# Pattern dimension mapping (synchronized with pattern.py CATEGORY_MAP)
-PATTERN_MODULES: dict[str, str] = {
-    "BULL_TREND": "market_env",
-    "BEAR_TREND": "market_env",
-    "SIDEWAYS": "market_env",
-    "BREAKOUT": "market_env",
-    "BREAKDOWN": "market_env",
-    "CHASE": "behavior",
-    "BOTTOM": "behavior",
-    "PYRAMID": "behavior",
-    "AVERAGE_DOWN": "behavior",
-    "TURN": "behavior",
-    "SCALP": "behavior",
-    "SWING": "behavior",
-    "POSITION": "behavior",
-    "FOMO": "behavior",
-    "TIGHT_STOP": "outcome",
-    "TRAILING_STOP": "outcome",
-    "TIME_EXIT": "outcome",
-    "LARGE_LOSS_EXIT": "outcome",
-    "POSSIBLE_REVENGE": "psychology",
-    "OVERTRADING": "psychology",
-    "HOLD_LOSER": "psychology",
-    "CUT_WINNER": "psychology",
-    "PSY_FOMO": "psychology",
-}
-
 
 # ─── Shared computation helpers ──────────────────────────────────────────────
 
@@ -89,7 +62,24 @@ def _compute_consecutive_losses(positions) -> int:
 
 
 def _module_for_pattern(pattern_name: str) -> str:
-    return PATTERN_MODULES.get(pattern_name, "behavior")
+    """Pattern → dimension. Delegates to PatternEngine.CATEGORY_MAP (single source)."""
+    return PatternEngine.CATEGORY_MAP.get(pattern_name, "behavior")
+
+
+def persist_snapshot(db: Session, analysis, field: str, payload) -> None:
+    """Self-heal: write one snapshot field on the Analysis row + commit.
+
+    Used by the three GET slow paths (get_stats/get_insight/get_whatif) so the
+    next request hits the fast path. Mirrors the pattern run_analysis already
+    uses. Rolls back on commit failure so a poisoned session doesn't break the
+    response (the in-memory payload is still returned to the caller).
+    """
+    setattr(analysis, field, payload)
+    try:
+        db.commit()
+    except Exception:
+        logger.exception("failed to cache %s for analysis %s", field, analysis.id)
+        db.rollback()
 
 
 def _select_best_worst_patterns(all_items: list):

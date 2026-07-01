@@ -6,6 +6,59 @@
 
 ---
 
+## [V1.2.5] — 2026-07-01
+
+### 概述
+
+V1.2.4 审计核实修复后，ecc:architect 做了架构审查，发现 3 个问题（P0-1/P1-1/P1-2，均经我独立核实属实）。本轮彻底修复——消除慢路径与 compute.py 的重复、report.py 改读 stats_snapshot、统一标签映射定义。`test_compute_equivalence.py` drift 防护网全程锁定等价性。
+
+### 修复的 Bug
+
+#### 1. P0-1：report.py 的 max_drawdown_pct 与 stats 面板不一致（阻断，既有 bug）
+
+**现象**：`report.py:354` 内联重算 max_drawdown_pct 用旧公式 `dd_denom = peak`，而 `compute.py`/`analysis.py` 已在 V1.1.2 修复为 `dd_denom = total_invested + peak`（回撤穿越零值时 >100%）。AI 诊断报告的回撤百分比与 stats 面板不一致——测试数据下 report=2.0531（>100%）vs stats=0.0479。AI 据此评级会与用户肉眼打架。
+
+**根因**：`report.py` 内联重算 stats ~60 行（债务 E），V1.1.2 修 stats 时漏改这份副本。这是慢路径与 compute.py 重复（债务 A）的直接产物。
+
+**修复**：`generate_report` 改读 `analysis.stats_snapshot`（与 /stats 端点同源），无快照才回退 `compute_stats`。删除 ~60 行内联重算。护栏字段（is_small_sample / avg_*_holding_days）不在 snapshot 里，合并进去。
+
+#### 2. P1-1：慢路径与 compute.py 重复（债务 A 根治）
+
+**现象**：`analysis.py` 三个 GET 慢路径（get_stats/insight/whatif）与 `compute.py` 手工副本 ~280 行（V1.2.4 补 self-heal 后 ~320 行），self-heal 块在 4 处重复。P0-1 就是这个重复的产物——任何 compute.py 算法调整都必须手工同步到 3 个端点，遗漏即漂移。
+
+**修复**：
+- 抽取 `compute.persist_snapshot(db, analysis, field, payload)` 公共方法，统一 self-heal（commit + rollback 防御）
+- `get_stats` 慢路径复用 `compute_stats` + patch MAE/MFE（compute_stats 硬编码 0，仿 compute_all backfill）
+- `get_insight` 慢路径复用 `compute_insight` + `_build_category_map`
+- `get_whatif` 慢路径复用 `compute_whatif`
+- 删除 analysis.py 本地 `_build_category_map`、`_compute_consecutive_losses`（与 compute.py 等价）
+- 慢路径仍用串行 `ensure_market_data`（非并行 fetcher），保留 V1.1.0 记录的 session 安全设计
+
+**收益**：~280 行重复消除，未来 compute.py 算法调整自动传播到所有端点，P0 类漂移从结构性必然变为不可能。
+
+#### 3. P1-2：PATTERN_MODULES 三处定义（债务）
+
+**现象**：标签→维度映射在 `pattern.py`（CATEGORY_MAP）、`analysis.py`（PATTERN_MODULES）、`compute.py`（PATTERN_MODULES）三处定义，靠人工同步。新增标签时遗漏会导致 `_module_for_pattern` 返回默认值，标签被错误归类。
+
+**修复**：删除 analysis.py/compute.py 的 PATTERN_MODULES 副本，`_module_for_pattern` 改用 `PatternEngine.CATEGORY_MAP.get(name, "behavior")`。CATEGORY_MAP 成为单一来源。
+
+### 验证
+
+- TDD：每个修复点先红后绿（P1-2 的 3 测试、P1-1 的 2 测试、P0-1 的 1 测试）
+- drift 防护网 `test_compute_equivalence.py`：慢路径 == compute_all 三组等价性测试全绿（重构前后均绿，证明无漂移）
+- 后端全套：**428 passed / 0 failed**（V1.2.4 基线 422 + 新增 6）
+
+### 涉及文件
+
+- 后端：`backend/app/engine/compute.py`（+`persist_snapshot`、删 PATTERN_MODULES）、`backend/app/api/analysis.py`（三慢路径复用 compute_*、删本地副本）、`backend/app/api/report.py`（读 stats_snapshot、删 ~60 行内联重算）
+- 测试：`backend/tests/test_engine/test_pattern.py`（+3）、`backend/tests/test_engine/test_compute_equivalence.py`（+2、更新 docstring）、`backend/tests/test_api/test_report.py`（+1）
+
+### 不做（YAGNI）
+
+- P2-1（confidence → 显式优先级表）、P2-2（get_whatif rule_type 死参数）、P3（别名/重复函数清理）— 与本次无关，留待未来
+
+---
+
 ## [V1.2.4] — 2026-07-01
 
 ### 概述

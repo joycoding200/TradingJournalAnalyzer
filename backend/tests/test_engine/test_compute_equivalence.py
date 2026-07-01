@@ -1,8 +1,8 @@
 """Drift-guard tests: the get_stats/get_insight/get_whatif slow paths in
-analysis.py are hand-maintained copies of compute.compute_stats /
-compute_insight / compute_whatif. The get_stats copy already drifted once and
-caused the 422 snapshot bug (fixed). These tests lock the behavior so any
-future divergence between the API slow path and the engine is caught immediately.
+analysis.py reuse compute.compute_stats / compute_insight / compute_whatif
+(P1-1 refactor). Previously they were hand-maintained copies that drifted and
+caused the 422 snapshot bug. These tests lock the behavior so any future
+divergence between the API slow path and the engine is caught immediately.
 
 Approach: force the slow path (null the snapshots), call the endpoint, then
 call compute_all directly on the same analysis and assert the two agree on the
@@ -425,3 +425,53 @@ class TestWhatIfSlowPathWritesSnapshot:
             "get_whatif slow path did not persist whatif_snapshot — every "
             "subsequent request will re-run the full computation"
         )
+
+
+# ─── P1-1 (架构审查 2026-07-01): persist_snapshot 公共方法 ──────────────────
+
+
+class TestPersistSnapshot:
+    """persist_snapshot is the shared self-heal helper for the three GET slow
+    paths + run_analysis. It must set the field, commit, and swallow commit
+    failures (rollback) so a poisoned session doesn't break the response."""
+
+    def test_persist_snapshot_writes_field_and_commits(self, db_session, setup_analysis):
+        from app.engine.compute import persist_snapshot
+
+        _, aid, _ = setup_analysis
+        db_session.rollback()
+        analysis = db_session.query(Analysis).filter_by(id=aid).first()
+        # Null it first so we can observe the write.
+        analysis.insight_snapshot = None
+        db_session.commit()
+
+        persist_snapshot(db_session, analysis, "insight_snapshot", {"some": "payload"})
+
+        db_session.rollback()
+        analysis = db_session.query(Analysis).filter_by(id=aid).first()
+        assert analysis.insight_snapshot == {"some": "payload"}
+
+    def test_persist_snapshot_swallows_commit_failure(self, db_session, setup_analysis):
+        """If commit fails (poisoned session), persist_snapshot must rollback
+        and not raise — the in-memory response is still returned to the caller."""
+        from sqlalchemy import text
+        from app.engine.compute import persist_snapshot
+
+        _, aid, _ = setup_analysis
+        db_session.rollback()
+        analysis = db_session.query(Analysis).filter_by(id=aid).first()
+
+        # Poison the session with bad SQL so the next commit fails.
+        try:
+            db_session.execute(text("SELECT * FROM non_existent_table_xyz"))
+            db_session.commit()
+        except Exception:
+            pass  # session now in rolled-back/poisoned state
+
+        # persist_snapshot must NOT raise even though commit will fail.
+        try:
+            persist_snapshot(db_session, analysis, "insight_snapshot", {"x": 1})
+        except Exception as e:
+            pytest.fail(f"persist_snapshot raised on commit failure: {e!r}")
+        # Session is usable again after the internal rollback.
+        db_session.rollback()

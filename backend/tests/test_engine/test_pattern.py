@@ -1510,3 +1510,49 @@ class TestChaseSurvivesEndToEnd:
         assert behavior_tag == "CHASE", (
             f"CHASE should survive over SWING, got behavior={behavior_tag!r}"
         )
+
+
+# ============================================================================
+# P1-2 (架构审查 2026-07-01): _module_for_pattern 必须复用 PatternEngine.CATEGORY_MAP
+# 不应在 analysis.py / compute.py 各自维护 PATTERN_MODULES 副本 (漂移风险).
+# ============================================================================
+
+
+class TestModuleForPatternUsesCategoryMap:
+    """_module_for_pattern in analysis.py and compute.py must delegate to
+    PatternEngine.CATEGORY_MAP, not maintain a parallel PATTERN_MODULES dict."""
+
+    def test_no_local_pattern_modules_dict_in_analysis(self):
+        """analysis.py should NOT define its own PATTERN_MODULES — it must reuse
+        PatternEngine.CATEGORY_MAP to avoid drift when new tags are added."""
+        import app.api.analysis as analysis_mod
+        assert not hasattr(analysis_mod, "PATTERN_MODULES"), (
+            "analysis.py still defines a local PATTERN_MODULES dict — should use "
+            "PatternEngine.CATEGORY_MAP instead (P1-2)"
+        )
+
+    def test_no_local_pattern_modules_dict_in_compute(self):
+        """compute.py should NOT define its own PATTERN_MODULES."""
+        import app.engine.compute as compute_mod
+        assert not hasattr(compute_mod, "PATTERN_MODULES"), (
+            "compute.py still defines a local PATTERN_MODULES dict — should use "
+            "PatternEngine.CATEGORY_MAP instead (P1-2)"
+        )
+
+    def test_module_for_pattern_matches_category_map(self):
+        """_module_for_pattern must return the same value as CATEGORY_MAP.get."""
+        from app.api.analysis import _module_for_pattern as analysis_mod_fn
+        from app.engine.compute import _module_for_pattern as compute_mod_fn
+        # Every tag in CATEGORY_MAP must resolve identically through both helpers.
+        for tag, expected in PatternEngine.CATEGORY_MAP.items():
+            assert analysis_mod_fn(tag) == expected, (
+                f"analysis._module_for_pattern({tag!r}) = {analysis_mod_fn(tag)!r}, "
+                f"CATEGORY_MAP says {expected!r}"
+            )
+            assert compute_mod_fn(tag) == expected, (
+                f"compute._module_for_pattern({tag!r}) = {compute_mod_fn(tag)!r}, "
+                f"CATEGORY_MAP says {expected!r}"
+            )
+        # Unknown tag falls back to "behavior".
+        assert analysis_mod_fn("UNKNOWN_TAG") == "behavior"
+        assert compute_mod_fn("UNKNOWN_TAG") == "behavior"

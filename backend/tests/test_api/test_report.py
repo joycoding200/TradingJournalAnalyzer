@@ -386,3 +386,49 @@ class TestReportInsightConsistency:
         assert compute_calls["compute_insight"] >= 1, (
             "report generation with no snapshot must fall back to compute_insight"
         )
+
+
+# ─── P0-1 (架构审查 2026-07-01): report 的 max_drawdown_pct 必须与 stats 同源 ──
+
+
+class TestReportMaxDrawdownMatchesStats:
+    """report.py must source max_drawdown_pct from analysis.stats_snapshot
+    (or compute_stats), NOT from an inline recompute with the old `peak`-only
+    denominator. The old inline formula drifted from compute.py's
+    `total_invested + peak` denominator (V1.1.2 fix) and fed the AI a different
+    drawdown % than the stats panel showed."""
+
+    def test_report_max_drawdown_matches_stats_snapshot(self, client, db_session):
+        from app.models.analysis import Analysis
+        from app.models.report import Report
+
+        headers = get_auth_header(client, "p01_mdd@test.com")
+        raw_file_id = import_trades(client, headers)
+        analysis_id = run_analysis(client, headers, raw_file_id)
+
+        # Read the stats_snapshot's max_drawdown_pct (the value the stats panel shows).
+        db_session.rollback()
+        analysis = db_session.query(Analysis).filter_by(id=analysis_id).first()
+        stats_mdd = analysis.stats_snapshot["max_drawdown_pct"]
+        assert stats_mdd is not None
+
+        with patch("app.api.report.get_llm") as mock_get_llm:
+            mock_provider = AsyncMock()
+            mock_provider.generate = AsyncMock(return_value=MOCK_REPORT)
+            mock_get_llm.return_value = mock_provider
+            gen = client.post(
+                "/api/report/generate",
+                headers=headers,
+                json={"analysis_id": analysis_id},
+            )
+            assert gen.status_code == 201, gen.text
+
+        report_id = gen.json()["report_id"]
+        db_session.rollback()
+        report = db_session.query(Report).filter_by(id=report_id).first()
+        report_mdd = report.analysis_input.get("max_drawdown_pct")
+
+        assert report_mdd == stats_mdd, (
+            f"report max_drawdown_pct ({report_mdd}) != stats_snapshot ({stats_mdd}) — "
+            "AI diagnosis diverges from the stats panel (P0-1 drift)"
+        )

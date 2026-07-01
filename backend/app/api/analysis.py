@@ -15,14 +15,17 @@ from app.models.analysis import Analysis, AnalysisFile
 from app.models.trade import Trade
 from app.models.user import User
 from app.models.raw_file import RawFile
-from app.engine.attribution import shapley_attribution
-from app.engine.compute import _select_best_worst_patterns
-from app.engine.insight import InsightEngine, InsightItem
+from app.engine.compute import (
+    _build_category_map,
+    compute_insight,
+    compute_stats,
+    compute_whatif,
+    persist_snapshot,
+)
 from app.engine.mae import compute_mae_mfe_stats
 from app.engine.market_fetcher import ensure_market_data
 from app.engine.pattern import PatternEngine
 from app.engine.position import PositionBuilder
-from app.engine.whatif import ProfitAttribution
 from app.ratelimit import limiter
 from app.schemas.analysis import (
     AnalysisListItem,
@@ -45,37 +48,6 @@ from app.schemas.analysis import (
 )
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
-
-# Pattern dimension mapping (synchronized with pattern.py CATEGORY_MAP)
-PATTERN_MODULES: dict[str, str] = {
-    # market_env — 市场环境
-    "BULL_TREND": "market_env",
-    "BEAR_TREND": "market_env",
-    "SIDEWAYS": "market_env",
-    "BREAKOUT": "market_env",
-    "BREAKDOWN": "market_env",
-    # behavior — 交易行为
-    "CHASE": "behavior",
-    "BOTTOM": "behavior",
-    "PYRAMID": "behavior",
-    "AVERAGE_DOWN": "behavior",
-    "TURN": "behavior",
-    "SCALP": "behavior",
-    "SWING": "behavior",
-    "POSITION": "behavior",
-    "FOMO": "behavior",
-    # outcome — 交易结果
-    "TIGHT_STOP": "outcome",
-    "TRAILING_STOP": "outcome",
-    "TIME_EXIT": "outcome",
-    "LARGE_LOSS_EXIT": "outcome",
-    # psychology — 心理推测
-    "POSSIBLE_REVENGE": "psychology",
-    "OVERTRADING": "psychology",
-    "HOLD_LOSER": "psychology",
-    "CUT_WINNER": "psychology",
-    "PSY_FOMO": "psychology",
-}
 
 
 @router.post(
@@ -239,24 +211,6 @@ _load_analysis = load_analysis
 _load_trades = load_trades
 
 
-def _compute_consecutive_losses(positions) -> int:
-    """Count the longest consecutive losing streak from positions.
-
-    pnl <= 0 counts as a loss (flat-after-fees is a real small loss), keeping
-    this consistent with loss_count / avg_loss / Expectancy which all use
-    `pnl <= 0`. See FINANCE_DOMAIN.md §1.
-    """
-    streak = 0
-    max_streak = 0
-    for p in positions:
-        if p.pnl <= 0:
-            streak += 1
-            max_streak = max(max_streak, streak)
-        else:
-            streak = 0
-    return max_streak
-
-
 @router.get("/{analysis_id}/stats", response_model=StatsResponse)
 @limiter.limit("30/minute")
 def get_stats(
@@ -289,305 +243,45 @@ def get_stats(
 
     # Slow path: compute on-demand (legacy analyses without snapshots, or when
     # run_analysis's compute_all failed at creation time — e.g. mootdx TCP errors
-    # on the server). Mirrors compute_stats/compute_all logic but computed
-    # inline so this endpoint never depends on the unified engine's parallel
-    # market-data fetcher (which can leave the session in a rolled-back state
-    # when daily_bars inserts collide).
+    # on the server). Reuses compute.compute_stats so the slow path can never
+    # drift from compute_all (the drift guard test_compute_equivalence locks
+    # this). Uses the serial ensure_market_data (not compute_all's parallel
+    # fetcher) to avoid the PendingRollbackError that parallel daily_bars
+    # inserts can trigger on this session.
     trades = _load_trades(analysis, current_user.id, db)
+    response = compute_stats(analysis, trades, db)
 
-    # Look up filenames from linked RawFiles (multi-file support)
-    file_ids = get_raw_file_ids(analysis.id, db)
-    filename_map = get_raw_file_filenames(file_ids, db)
-    filenames = [filename_map.get(fid, "") for fid in file_ids]
-    analysis_filename = filenames[0] if filenames else ""
-
-    # Build symbol -> Chinese-name lookup (shared with compute_stats).
-    symbol_name_map = build_symbol_name_map(trades)
-
+    # compute_stats hardcodes MAE/MFE to 0.0 (it doesn't fetch market data);
+    # patch them in here, mirroring compute_all's backfill. Fetch with the
+    # serial ensure_market_data for the session-safety reason above.
     positions = PositionBuilder.build(trades)
-
-    total_trades = len(trades)
-    total_positions = len(positions)
-    unknown_cost_count = sum(1 for p in positions if not getattr(p, "cost_known", True))
-
-    # Use only valid positions (cost_known == True) for all KPIs
     valid_positions = [p for p in positions if getattr(p, "cost_known", True)]
-    valid_count = len(valid_positions)
-    is_small_sample = valid_count < 5
-
-    win_count = sum(1 for p in valid_positions if p.pnl > 0)
-    win_rate = (win_count / valid_count) if valid_count > 0 else 0.0
-    total_pnl = sum(p.pnl for p in valid_positions)
-    avg_holding_days = (
-        sum(p.holding_days for p in valid_positions) / valid_count
-        if valid_count > 0
-        else 0.0
-    )
-    max_win_pos = max(valid_positions, key=lambda p: p.pnl, default=None)
-    max_loss_pos = min(valid_positions, key=lambda p: p.pnl, default=None)
-    max_win = max_win_pos.pnl if max_win_pos else 0.0
-    max_loss = max_loss_pos.pnl if max_loss_pos else 0.0
-    max_win_symbol = max_win_pos.symbol if max_win_pos else ""
-    max_win_date = str(max_win_pos.exit_date) if max_win_pos else ""
-    max_loss_symbol = max_loss_pos.symbol if max_loss_pos else ""
-    max_loss_date = str(max_loss_pos.exit_date) if max_loss_pos else ""
-    consecutive_losses = _compute_consecutive_losses(
-        sorted(valid_positions, key=lambda p: p.exit_date)
-    )
-
-    # PnL level distribution (NOT behavioral outcome patterns)
-    pnl_counts: dict[str, int] = {}
-    for p in valid_positions:
-        level_info = PatternEngine.classify_pnl_level(p)
-        level = level_info["level"]
-        if level:
-            pnl_counts[level] = pnl_counts.get(level, 0) + 1
-    pnl_distribution = [
-        PnlLevelItem(level=level, count=count)
-        for level, count in sorted(pnl_counts.items())
-    ]
-
-    # V4.0: symbol summary — group valid positions by symbol
-    symbol_summary_data: list[dict] = []
-    symbol_groups: dict[str, list] = {}
-    for p in valid_positions:
-        symbol_groups.setdefault(p.symbol, []).append(p)
-    for symbol, group in symbol_groups.items():
-        win_pos = [p for p in group if p.pnl > 0]
-        sym_trade_count = len(group)
-        sym_win_count = len(win_pos)
-        total_pnl_sym = sum(p.pnl for p in group)
-        avg_hold = sum(p.holding_days for p in group) / sym_trade_count if sym_trade_count > 0 else 0.0
-        exit_dates = [p.exit_date for p in group]
-        symbol_summary_data.append({
-            "symbol": symbol,
-            "symbol_name": symbol_name_map.get(symbol),
-            "trade_count": sym_trade_count,
-            "win_count": sym_win_count,
-            "win_rate": round(sym_win_count / sym_trade_count, 4) if sym_trade_count > 0 else 0.0,
-            "total_pnl": round(total_pnl_sym, 2),
-            "avg_holding_days": round(avg_hold, 1),
-            "first_trade_date": str(min(exit_dates)) if exit_dates else "",
-            "last_trade_date": str(max(exit_dates)) if exit_dates else "",
-        })
-    # Sort by total_pnl descending
-    symbol_summary_data.sort(key=lambda x: x["total_pnl"], reverse=True)
-
-    position_items = [
-        PositionItem(
-            symbol=p.symbol,
-            asset_type=p.asset_type,
-            entry_date=p.entry_date,
-            exit_date=p.exit_date,
-            holding_days=p.holding_days,
-            total_quantity=p.total_quantity,
-            avg_entry_price=p.avg_entry_price,
-            avg_exit_price=p.avg_exit_price,
-            pnl=p.pnl,
-            pnl_pct=p.pnl_pct,
-            trade_ids=p.trade_ids,
-            entry_count=getattr(p, "entry_count", 0),
-            total_buys=getattr(p, "total_buys", 0.0),
-            total_sells=getattr(p, "total_sells", 0.0),
-        )
-        for p in positions
-    ]
-
-    # New financial metrics
-    win_positions = [p for p in valid_positions if p.pnl > 0]
-    loss_positions = [p for p in valid_positions if p.pnl <= 0]
-    loss_count = len(loss_positions)
-
-    avg_win_amount = sum(p.pnl for p in win_positions) / len(win_positions) if win_positions else 0.0
-    avg_loss_amount = sum(p.pnl for p in loss_positions) / len(loss_positions) if loss_positions else 0.0
-    avg_win_pct = sum(p.pnl_pct for p in win_positions) / len(win_positions) if win_positions else 0.0
-    avg_loss_pct = sum(p.pnl_pct for p in loss_positions) / len(loss_positions) if loss_positions else 0.0
-    # Payoff Ratio is undefined when there are no losses (division by zero).
-    # Return None so every consumer (UI, snapshot, future AI input) can render
-    # "∞" consistently instead of mistaking 0.0 for "unqualified". See P1a.
-    win_loss_ratio = avg_win_amount / abs(avg_loss_amount) if avg_loss_amount != 0 else None
-
-    total_gross_profit = sum(p.pnl for p in win_positions)
-    total_gross_loss = abs(sum(p.pnl for p in loss_positions))
-    # Profit Factor is undefined when there are no losses. Return None (→ "∞")
-    # rather than 0.0, so snapshots and AI inputs don't read a perfect win-rate
-    # account as PF=0 "unqualified". See P1a.
-    profit_factor = total_gross_profit / total_gross_loss if total_gross_loss > 0 else None
-
-    avg_win_holding = sum(p.holding_days for p in win_positions) / len(win_positions) if win_positions else 0.0
-    avg_loss_holding = sum(p.holding_days for p in loss_positions) / len(loss_positions) if loss_positions else 0.0
-
-    # Total invested and return %
-    total_invested = sum(
-        p.avg_entry_price * p.total_quantity for p in valid_positions
-    )
-    total_return_pct = total_pnl / total_invested if total_invested > 0 else 0.0
-
-    # Max drawdown: V2.5 → absolute + percentage (industry standard)
-    # Walk the cumulative-PnL curve by exit date. peak starts at 0; it only
-    # rises when cumulative PnL turns positive. For accounts that lose from
-    # the very first trade (cum_pnl never positive), peak stays 0 and a naive
-    # `max_dd / peak` would yield 0% — falsely rating a bleeding account as
-    # "excellent drawdown". Fall back to total_invested as the capital base
-    # so the percentage stays meaningful. See docs/review P0.
-    sorted_positions = sorted(valid_positions, key=lambda p: p.exit_date)
-    cum_pnl = 0.0
-    peak = 0.0
-    max_dd = 0.0
-    # V4.0: collect equity curve data points
-    equity_curve_data: list[dict] = []
-    if sorted_positions:
-        # Starting point (pre-first-trade)
-        equity_curve_data.append({
-            "date": str(sorted_positions[0].exit_date),
-            "cum_pnl": 0.0,
-            "cum_pnl_pct": 0.0,
-        })
-    for p in sorted_positions:
-        cum_pnl += p.pnl
-        if cum_pnl > peak:
-            peak = cum_pnl
-        dd = peak - cum_pnl
-        if dd > max_dd:
-            max_dd = dd
-        equity_curve_data.append({
-            "date": str(p.exit_date),
-            "cum_pnl": round(cum_pnl, 2),
-            "cum_pnl_pct": round(cum_pnl / total_invested, 4) if total_invested > 0 else 0.0,
-        })
-    # Drawdown % denominator = peak account equity (principal + peak floating
-    # profit), NOT peak floating profit alone. Using cum_pnl's peak as the
-    # denominator makes max_dd_pct exceed 100% when trough crosses below zero
-    # (cum_pnl is a profit stream, not account equity — it can go negative).
-    # Adding total_invested restores the true capital base so the ratio is
-    # bounded by 100% unless the account itself goes underwater. This also
-    # subsumes the "lost from trade one" fallback: when peak==0 the denom is
-    # just total_invested, identical to the prior behaviour. See P0b.
-    dd_denom = (total_invested + peak) if (total_invested + peak) > 0 else 0.0
-    max_drawdown_pct = (max_dd / dd_denom) if dd_denom > 0 else 0.0
-
-    # MAE/MFE computation (V1.2)
-    mae_mfe_stats = {}
     symbols = list({p.symbol for p in valid_positions})
     if symbols:
         market_data = ensure_market_data(db, symbols, analysis.date_start, analysis.date_end)
         mae_mfe_stats = compute_mae_mfe_stats(valid_positions, market_data)
-
-    # Expectancy (V1.3)
-    total_expectancy = 0.0
-    if valid_count > 0:
-        total_expectancy = InsightItem.compute(valid_positions)
-
-    response = StatsResponse(
-        filename=analysis_filename,
-        filenames=filenames,
-        raw_file_ids=file_ids,
-        total_trades=total_trades,
-        total_positions=total_positions,
-        unknown_cost_count=unknown_cost_count,
-        win_count=win_count,
-        loss_count=loss_count,
-        win_rate=round(win_rate, 2),
-        total_pnl=round(total_pnl, 2),
-        avg_holding_days=round(avg_holding_days, 1),
-        avg_win_holding_days=round(avg_win_holding, 1),
-        avg_loss_holding_days=round(avg_loss_holding, 1),
-        max_win=round(max_win, 2),
-        max_loss=round(max_loss, 2),
-        max_win_symbol=max_win_symbol,
-        max_win_date=max_win_date,
-        max_loss_symbol=max_loss_symbol,
-        max_loss_date=max_loss_date,
-        consecutive_losses=consecutive_losses,
-        profit_factor=round(profit_factor, 2) if profit_factor is not None else None,
-        avg_win_amount=round(avg_win_amount, 2),
-        avg_loss_amount=round(avg_loss_amount, 2),
-        win_loss_ratio=round(win_loss_ratio, 2) if win_loss_ratio is not None else None,
-        max_drawdown=round(max_dd, 2),
-        max_drawdown_pct=round(max_drawdown_pct, 4),
-        total_return_pct=round(total_return_pct, 4),
-        avg_win_pct=round(avg_win_pct, 4),
-        avg_loss_pct=round(avg_loss_pct, 4),
-        pnl_distribution=pnl_distribution,
-        positions=position_items,
-        # V1.2 MAE/MFE
-        avg_mae=round(mae_mfe_stats.get("avg_mae", 0.0), 4),
-        avg_mfe=round(mae_mfe_stats.get("avg_mfe", 0.0), 4),
-        mae_winners=round(mae_mfe_stats.get("mae_winners", 0.0), 4),
-        mae_losers=round(mae_mfe_stats.get("mae_losers", 0.0), 4),
-        profit_capture_ratio=round(mae_mfe_stats.get("profit_capture_ratio", 0.0), 4),
-        # V1.3 Expectancy
-        expectancy=round(total_expectancy, 2),
-        # V3.1 Small sample indicator
-        is_small_sample=is_small_sample,
-        # V4.0 Equity curve + symbol summary
-        equity_curve=[EquityPoint(**pt) for pt in equity_curve_data],
-        symbol_summary=[SymbolSummaryItem(**s) for s in symbol_summary_data],
-    )
+        response.avg_mae = round(mae_mfe_stats.get("avg_mae", 0.0), 4)
+        response.avg_mfe = round(mae_mfe_stats.get("avg_mfe", 0.0), 4)
+        response.mae_winners = round(mae_mfe_stats.get("mae_winners", 0.0), 4)
+        response.mae_losers = round(mae_mfe_stats.get("mae_losers", 0.0), 4)
+        response.profit_capture_ratio = round(mae_mfe_stats.get("profit_capture_ratio", 0.0), 4)
 
     # Cache the FULL StatsResponse snapshot so the fast path
-    # (StatsResponse(**snapshot)) works on the next request. The previous
-    # implementation stored a 12-field "summary" dict here, which lacked
-    # required fields (positions, max_win, max_loss, consecutive_losses, …)
-    # and caused the next request to raise ValidationError → 422, making the
-    # analysis panel permanently show "加载失败". Storing the complete
-    # model_dump() guarantees the round-trip. See test_snapshot_round_trip.
+    # (StatsResponse(**snapshot)) works on the next request. Storing the
+    # complete model_dump() guarantees the round-trip (a prior 12-field
+    # "summary" dict caused 422s — see test_snapshot_round_trip).
     snapshot = response.model_dump(mode="json")
     snapshot["snapshot_raw_file_id"] = analysis.raw_file_id  # legacy compat
-    snapshot["snapshot_raw_file_ids"] = file_ids  # multi-file provenance
-    analysis.stats_snapshot = snapshot
-    try:
-        db.commit()
-    except Exception:
-        logger.exception("failed to cache stats snapshot for analysis %s", analysis.id)
-        db.rollback()
+    snapshot["snapshot_raw_file_ids"] = get_raw_file_ids(analysis.id, db)  # multi-file provenance
+    persist_snapshot(db, analysis, "stats_snapshot", snapshot)
 
     return response
 
 
-def _build_category_map(
-    positions, trades=None, market_data=None
-) -> dict[int, dict[str, str]]:
-    """Tag each position and return {index: {category: pattern_name}}.
-
-    Merges Module 1 (entry, requires market_data), Module 2 (holding),
-    Module 3 (risk/exit) tags. One tag per category per position.
-    """
-    tag_kwargs = {}
-    if trades:
-        tag_kwargs["trades"] = trades
-        tag_kwargs["all_trades"] = trades
-
-    # Psychology patterns: computed once for all positions
-    psychology_results = PatternEngine.detect_psychological_patterns(
-        positions, all_trades=trades or None
-    )
-    # Build {position_index: [PatternResult]} map for quick lookup
-    psyche_by_pos: dict[int, list] = {}
-    for idx, psy_result in psychology_results:
-        psyche_by_pos.setdefault(idx, []).append(psy_result)
-
-    category_map: dict[int, dict[str, str]] = {}
-    for i, pos in enumerate(positions):
-        results = PatternEngine.tag_position(pos, positions, **tag_kwargs)
-        if market_data:
-            results.extend(
-                PatternEngine.tag_market_patterns(pos, market_data)
-            )
-        results = PatternEngine.resolve_hierarchy(results)
-
-        # Attach psychology patterns that belong to this position
-        if i in psyche_by_pos:
-            results.extend(psyche_by_pos[i])
-
-        resolved = PatternEngine.resolve_per_category(results)
-        category_map[i] = {r.category: r.pattern_name for r in resolved if r.category}
-    return category_map
-
-
 def _module_for_pattern(pattern_name: str) -> str:
-    """Return the dimension name for a pattern (market_env/behavior/outcome/psychology)."""
-    return PATTERN_MODULES.get(pattern_name, "behavior")
+    """Return the dimension name for a pattern (market_env/behavior/outcome/psychology).
+    Delegates to PatternEngine.CATEGORY_MAP (single source)."""
+    return PatternEngine.CATEGORY_MAP.get(pattern_name, "behavior")
 
 
 @router.get("/{analysis_id}/insight", response_model=InsightResponse)
@@ -605,7 +299,9 @@ def get_insight(
     if analysis.insight_snapshot:
         return InsightResponse(**analysis.insight_snapshot)
 
-    # Slow path: compute on-demand (legacy analyses without snapshots)
+    # Slow path: compute on-demand (legacy analyses without snapshots).
+    # Reuses compute.compute_insight so the slow path can never drift from
+    # compute_all (the drift guard test_compute_equivalence locks this).
     trades = _load_trades(analysis, current_user.id, db)
     positions = PositionBuilder.build(trades)
 
@@ -613,104 +309,18 @@ def get_insight(
     symbols = list({p.symbol for p in positions})
     market_data = {}
     if symbols:
-        date_start = analysis.date_start
-        date_end = analysis.date_end
-        market_data = ensure_market_data(db, symbols, date_start, date_end)
+        market_data = ensure_market_data(
+            db, symbols, analysis.date_start, analysis.date_end
+        )
 
     category_map = _build_category_map(positions, trades=trades, market_data=market_data)
-    items_by_cat = InsightEngine.analyze_by_category(positions, category_map)
-
-    def to_pattern_item(i) -> InsightPatternItem:
-        return InsightPatternItem(
-            pattern_name=i.pattern_name,
-            count=i.count,
-            win_count=i.win_count,
-            win_rate=round(i.win_rate, 4),
-            total_pnl=i.total_pnl,
-            avg_pnl_pct=round(i.avg_pnl_pct, 4),
-            expectancy=round(i.expectancy, 4),
-            gross_profit=round(getattr(i, "gross_profit", 0.0), 2),
-            gross_loss=round(getattr(i, "gross_loss", 0.0), 2),
-        )
-
-    # Flat list + per-category lists
-    all_items = []
-    cat_items: dict[str, list[InsightPatternItem]] = {}
-    for cat, cat_insight_items in items_by_cat.items():
-        converted = [to_pattern_item(i) for i in cat_insight_items]
-        cat_items[cat] = converted
-        all_items.extend(converted)
-
-    # Group by dimension (V1.1)
-    market_env_items = [p for p in all_items if _module_for_pattern(p.pattern_name) == "market_env"]
-    behavior_items = [p for p in all_items if _module_for_pattern(p.pattern_name) == "behavior"]
-    outcome_items = [p for p in all_items if _module_for_pattern(p.pattern_name) == "outcome"]
-    psychology_items = [p for p in all_items if _module_for_pattern(p.pattern_name) == "psychology"]
-
-    # V2.3: baseline expectancy (overall) for behavior evaluation
-    valid_positions = [p for i, p in enumerate(positions) if getattr(p, "cost_known", True)]
-    valid_indices = {i for i, p in enumerate(positions) if getattr(p, "cost_known", True)}
-    baseline_expectancy = InsightItem.compute(valid_positions) if valid_positions else 0.0
-
-    best, worst = _select_best_worst_patterns(all_items)
-
-    # Cross-dimension analysis: market_env × behavior
-    cross_data: dict[tuple[str, str], dict] = {}
-    for i in valid_indices:
-        cat = category_map.get(i, {})
-        env = cat.get("market_env", "SIDEWAYS")
-        beh = cat.get("behavior", "未标记")
-        key = (env, beh)
-        p = positions[i]
-        if key not in cross_data:
-            cross_data[key] = {"count": 0, "win_count": 0, "total_pnl": 0.0, "total_pnl_pct": 0.0}
-        cross_data[key]["count"] += 1
-        if p.pnl > 0:
-            cross_data[key]["win_count"] += 1
-        cross_data[key]["total_pnl"] += p.pnl
-        cross_data[key]["total_pnl_pct"] += p.pnl_pct
-    cross_analysis = [
-        CrossAnalysisItem(
-            market_env=env,
-            behavior=beh,
-            count=d["count"],
-            win_count=d["win_count"],
-            win_rate=round(d["win_count"] / d["count"], 4) if d["count"] > 0 else 0.0,
-            total_pnl=round(d["total_pnl"], 2),
-            avg_pnl_pct=round(d["total_pnl_pct"] / d["count"], 4) if d["count"] > 0 else 0.0,
-        )
-        for (env, beh), d in sorted(cross_data.items(), key=lambda kv: kv[1]["total_pnl"], reverse=True)
-    ]
-
-    response = InsightResponse(
-        patterns=all_items,
-        market_env=market_env_items,
-        behavior=behavior_items,
-        outcome=outcome_items,
-        psychology=psychology_items,
-        # Legacy backward compat
-        entry_patterns=market_env_items,
-        holding_patterns=behavior_items,
-        risk_patterns=outcome_items,
-        exit_patterns=psychology_items,
-        categories=cat_items,
-        best_pattern=best,
-        worst_pattern=worst,
-        baseline_expectancy=round(baseline_expectancy, 4),
-        cross_analysis=cross_analysis,
-    )
+    response = compute_insight(positions, trades, category_map)
 
     # Self-heal: persist the snapshot so the next request hits the fast path.
     # Mirrors get_stats. Without this, a failed compute_all at run_analysis
     # time leaves insight_snapshot permanently null and every GET re-runs the
     # full computation. See BUG-3 audit fix.
-    analysis.insight_snapshot = response.model_dump(mode="json")
-    try:
-        db.commit()
-    except Exception:
-        logger.exception("failed to cache insight snapshot for analysis %s", analysis.id)
-        db.rollback()
-
+    persist_snapshot(db, analysis, "insight_snapshot", response.model_dump(mode="json"))
     return response
 
 
@@ -730,102 +340,25 @@ def get_whatif(
     if analysis.whatif_snapshot:
         return WhatIfResponse(**analysis.whatif_snapshot)
 
-    # Slow path: compute on-demand (legacy analyses without snapshots)
+    # Slow path: compute on-demand (legacy analyses without snapshots).
+    # Reuses compute.compute_whatif so the slow path can never drift from
+    # compute_all (the drift guard test_compute_equivalence locks this).
     trades = _load_trades(analysis, current_user.id, db)
     positions = PositionBuilder.build(trades)
-    valid_positions = [p for p in positions if getattr(p, "cost_known", True)]
 
     # Fetch market data for entry-pattern tagging
     symbols = list({p.symbol for p in positions})
     market_data = {}
     if symbols:
-        date_start = analysis.date_start
-        date_end = analysis.date_end
-        market_data = ensure_market_data(db, symbols, date_start, date_end)
+        market_data = ensure_market_data(
+            db, symbols, analysis.date_start, analysis.date_end
+        )
 
     category_map = _build_category_map(positions, trades=trades, market_data=market_data)
-    # Use all available category patterns per position for behavioral what-if
-    patterns_map_names: dict[int, list[str]] = {}
-    for idx, cats in category_map.items():
-        names = list(cats.values())
-        if names:
-            patterns_map_names[idx] = names
-    items = ProfitAttribution.attribution_analysis(positions, patterns_map_names)
-
-    whatif_items = [
-        AttributionItem(
-            removed_pattern=i.removed_pattern,
-            original_return=i.original_return,
-            what_if_return=i.what_if_return,
-            delta=i.delta,
-            contribution_pct=i.contribution_pct,
-            absolute_impact=i.absolute_impact,
-        )
-        for i in items
-    ]
-
-    # ── 规则回测模拟（V1.2.3: 5个规则全算，固定标准档参数）────────────
-    # delta = 模拟后收益率 − 现状收益率，delta>0 = 该规则改善收益
-    def _run_rule(rt, params):
-        result = ProfitAttribution.analyze_rule(
-            valid_positions, rule_type=rt, params=params, market_data=market_data
-        )
-        if not result:
-            return None
-        return RuleSimulationItem(
-            rule=result["rule"],
-            original_return=result["original_return"],
-            what_if_return=result["what_if_return"],
-            delta=result["delta"],
-            affected_positions=result["affected_positions"],
-        )
-
-    # 止损侧：固定8%止损（标准档，原5%偏紧）+ 仅大亏止损
-    stop_loss_sim = _run_rule("stop_loss", {"loss_pct": 0.08})
-    stop_loss_large_loss_sim = _run_rule(
-        "stop_loss_large_loss", {"loss_pct": 0.08, "large_loss_pct": -0.08}
-    )
-    # 移动止损：跟踪 high 回撤 8%
-    trailing_stop_sim = _run_rule("trailing_stop", {"trail_pct": 0.08})
-    # 止盈侧：固定止盈 +10% + 移动止盈(模式A) 5%/5%
-    take_profit_sim = _run_rule("take_profit", {"profit_pct": 0.10})
-    trailing_take_profit_sim = _run_rule(
-        "trailing_take_profit", {"activation_pct": 0.05, "trail_pct": 0.05}
-    )
-
-    # V2.0 Shapley attribution
-    shapley_values = shapley_attribution(positions, patterns_map_names)
-    total_pnl = sum(p.pnl for p in valid_positions)
-    # Denom is abs(total_pnl) so pct sign follows shapley_value (see compute.py).
-    denom = abs(total_pnl)
-    shapley_items = [
-        ShapleyItem(
-            pattern_name=pat,
-            shapley_value=val,
-            pct_of_total=round(val / denom * 100, 1) if denom > 0 else 0.0,
-        )
-        for pat, val in sorted(shapley_values.items(), key=lambda x: -x[1])
-    ]
-
-    response = WhatIfResponse(
-        items=whatif_items,
-        stop_loss=stop_loss_sim,
-        stop_loss_large_loss=stop_loss_large_loss_sim,
-        trailing_stop=trailing_stop_sim,
-        take_profit=take_profit_sim,
-        trailing_take_profit=trailing_take_profit_sim,
-        shapley=shapley_items,
-    )
+    response = compute_whatif(positions, category_map, market_data)
 
     # Self-heal: persist the snapshot so the next request hits the fast path.
-    # Mirrors get_stats. See BUG-3 audit fix.
-    analysis.whatif_snapshot = response.model_dump(mode="json")
-    try:
-        db.commit()
-    except Exception:
-        logger.exception("failed to cache whatif snapshot for analysis %s", analysis.id)
-        db.rollback()
-
+    persist_snapshot(db, analysis, "whatif_snapshot", response.model_dump(mode="json"))
     return response
 
 

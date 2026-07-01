@@ -320,77 +320,26 @@ async def generate_report(
         for pat, val in shapley_summary
     ]
 
-    win_positions = [p for p in valid_positions if p.pnl > 0]
-    loss_positions = [p for p in valid_positions if p.pnl <= 0]
-    total_gross_profit = sum(p.pnl for p in win_positions)
-    total_gross_loss = abs(sum(p.pnl for p in loss_positions))
-    profit_factor = total_gross_profit / total_gross_loss if total_gross_loss > 0 else None
-    total_pnl_val = sum(p.pnl for p in valid_positions)
-    total_invested = sum(p.avg_entry_price * p.total_quantity for p in valid_positions)
-    total_return_pct = total_pnl_val / total_invested if total_invested > 0 else 0.0
-    avg_win_amount = sum(p.pnl for p in win_positions) / len(win_positions) if win_positions else 0.0
-    avg_loss_amount = sum(p.pnl for p in loss_positions) / len(loss_positions) if loss_positions else 0.0
-    win_loss_ratio = avg_win_amount / abs(avg_loss_amount) if avg_loss_amount != 0 else None
-
-    # Consecutive losses
-    sorted_by_date = sorted(valid_positions, key=lambda p: p.exit_date)
-    streak, max_streak = 0, 0
-    for p in sorted_by_date:
-        if p.pnl <= 0:
-            streak += 1
-            max_streak = max(max_streak, streak)
-        else:
-            streak = 0
-
-    # Max drawdown
-    cum_pnl, peak, max_dd = 0.0, 0.0, 0.0
-    for p in sorted_by_date:
-        cum_pnl += p.pnl
-        if cum_pnl > peak:
-            peak = cum_pnl
-        dd = peak - cum_pnl
-        if dd > max_dd:
-            max_dd = dd
-    dd_denom = peak if peak > 0 else (total_invested if total_invested > 0 else 0.0)
-    max_drawdown_pct = (max_dd / dd_denom) if dd_denom > 0 else 0.0
-
-    # MAE/MFE
-    mae_mfe_stats = {}
-    symbols = list({p.symbol for p in valid_positions})
-    if symbols and market_data:
-        from app.engine.mae import compute_mae_mfe_stats as _compute_mae
-        mae_mfe_stats = _compute_mae(valid_positions, market_data)
-
-    # Expectancy
-    from app.engine.insight import InsightItem
-    expectancy_val = InsightItem.compute(valid_positions) if valid_positions else 0.0
-
-    # PnL level distribution (NOT behavioral outcome patterns)
-    pnl_counts: dict[str, int] = {}
-    for p in valid_positions:
-        level_info = PatternEngine.classify_pnl_level(p)
-        level = level_info["level"]
-        if level:
-            pnl_counts[level] = pnl_counts.get(level, 0) + 1
-    pnl_dist = [{"level": l, "count": c} for l, c in sorted(pnl_counts.items())]
-
-    stats_data = {
-        "profit_factor": round(profit_factor, 2) if profit_factor is not None else None,
-        "expectancy": round(expectancy_val, 2),
-        "max_drawdown": round(max_dd, 2),
-        "max_drawdown_pct": round(max_drawdown_pct, 4),
-        "consecutive_losses": max_streak,
-        "avg_mae": round(mae_mfe_stats.get("avg_mae", 0.0), 4),
-        "avg_mfe": round(mae_mfe_stats.get("avg_mfe", 0.0), 4),
-        "profit_capture_ratio": round(mae_mfe_stats.get("profit_capture_ratio", 0.0), 4),
-        "win_loss_ratio": round(win_loss_ratio, 2) if win_loss_ratio is not None else None,
-        "total_return_pct": round(total_return_pct, 4),
-        "pnl_distribution": pnl_dist,
-        # AI_INPUT_CONTRACT 护栏字段
-        "is_small_sample": is_small_sample,
-        "avg_win_holding_days": round(avg_win_holding, 1),
-        "avg_loss_holding_days": round(avg_loss_holding, 1),
-    }
+    # V4.0: stats-level metrics for the AI prompt.
+    # Source from analysis.stats_snapshot (the EXACT value the /stats panel
+    # shows) so the AI can never diverge from what the user sees. The previous
+    # inline recompute drifted — its max_drawdown_pct used the old `peak`-only
+    # denominator while compute.py/analysis.py moved to `total_invested + peak`
+    # in V1.1.2 (P0-1). Fall back to compute_stats only for legacy analyses
+    # without a snapshot. AI_INPUT_CONTRACT护栏 fields (is_small_sample /
+    # avg_*_holding_days) are not in the snapshot, so merge them in here.
+    if analysis.stats_snapshot:
+        stats_data = dict(analysis.stats_snapshot)
+    else:
+        from app.engine.compute import compute_stats as _compute_stats
+        stats_data = _compute_stats(analysis, trades, db).model_dump(mode="json")
+    # Strip legacy snapshot-only keys that aren't AI-input contract fields.
+    stats_data.pop("snapshot_raw_file_id", None)
+    stats_data.pop("snapshot_raw_file_ids", None)
+    # Merge护栏 fields (not stored in stats_snapshot).
+    stats_data["is_small_sample"] = is_small_sample
+    stats_data["avg_win_holding_days"] = round(avg_win_holding, 1)
+    stats_data["avg_loss_holding_days"] = round(avg_loss_holding, 1)
 
     # Build AI prompt with exact dates (so the AI doesn't guess)
     from datetime import date as date_type
